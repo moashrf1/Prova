@@ -50,3 +50,38 @@ async def test_list_skills_and_get_skill_over_stdio():
                 "get_skill", {"skill_name": "not-a-real-skill"}
             )
             assert "No skill named" in missing.content[0].text
+
+
+@pytest.mark.asyncio
+async def test_log_work_and_log_decision_over_stdio():
+    """Same rationale as the skills test above: no Inspector available here,
+    so the mcp client drives the real server process over stdio. Uses an
+    identifiable project name since this writes into the real
+    data/enablement.db (not isolated) -- consistent with how the
+    list_skills/get_skill integration test already runs against real data."""
+    params = StdioServerParameters(
+        command="python", args=["server.py"], cwd=str(PROJECT_ROOT)
+    )
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            decision = await session.call_tool(
+                "log_decision",
+                {
+                    "project_name": "test-integration-project",
+                    "decision": "Use stdio client for integration tests",
+                    "reasoning": "No browser Inspector in this environment",
+                    "rejected_alternative": "Skip integration coverage entirely",
+                },
+            )
+            assert "Logged decision" in decision.content[0].text
+
+            work = await session.call_tool(
+                "log_work",
+                {
+                    "project_name": "test-integration-project",
+                    "tasks": "wrote integration test",
+                },
+            )
+            assert "Logged work" in work.content[0].text
