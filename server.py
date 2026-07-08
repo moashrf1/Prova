@@ -49,5 +49,21 @@ def log_work(project_name: str, tasks: str, learnings: str | None = None) -> str
     )
 
 
+@mcp.tool()
+def log_decision(
+    project_name: str,
+    decision: str,
+    reasoning: str,
+    rejected_alternative: str | None = None,
+) -> str:
+    """Record a single decision at the moment it's made, linked to the current session."""
+    result = work_store.log_decision(project_name, decision, reasoning, rejected_alternative)
+    return (
+        f"Logged decision for project '{result['project']}' "
+        f"(project_id={result['project_id']}, session_id={result['session_id']}, "
+        f"decision_id={result['decision_id']})."
+    )
+
+
 if __name__ == "__main__":
     mcp.run()

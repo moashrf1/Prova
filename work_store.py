@@ -137,3 +137,32 @@ def log_work(project_name: str, tasks: str, learnings: str | None = None) -> dic
         "session_id": session_id,
         "worklog_id": worklog_id,
     }
+
+
+def log_decision(
+    project_name: str,
+    decision: str,
+    reasoning: str,
+    rejected_alternative: str | None = None,
+) -> dict:
+    """Record a single decision at the moment it's made.
+
+    Opens (or reuses) the project's open session but does NOT close it --
+    a session can hold many decisions before the log_work call that
+    eventually closes it out.
+    """
+    project_id = get_or_create_project(project_name)
+    session_id = get_or_create_open_session(project_id)
+    with db_connection() as conn:
+        cursor = conn.execute(
+            "INSERT INTO decisions (session_id, decision, reasoning, rejected_alternative) "
+            "VALUES (?, ?, ?, ?)",
+            (session_id, decision, reasoning, rejected_alternative),
+        )
+        decision_id = cursor.lastrowid
+    return {
+        "project": project_name,
+        "project_id": project_id,
+        "session_id": session_id,
+        "decision_id": decision_id,
+    }
