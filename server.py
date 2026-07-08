@@ -38,5 +38,16 @@ def get_skill(skill_name: str) -> str:
     return skill["body"]
 
 
+@mcp.tool()
+def log_work(project_name: str, tasks: str, learnings: str | None = None) -> str:
+    """Record an end-of-session worklog entry, auto-creating the project/session as needed."""
+    result = work_store.log_work(project_name, tasks, learnings)
+    return (
+        f"Logged work for project '{result['project']}' "
+        f"(project_id={result['project_id']}, session_id={result['session_id']}, "
+        f"worklog_id={result['worklog_id']})."
+    )
+
+
 if __name__ == "__main__":
     mcp.run()

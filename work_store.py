@@ -113,3 +113,27 @@ def close_session(session_id: int) -> None:
             "UPDATE sessions SET ended_at = datetime('now') WHERE id = ?",
             (session_id,),
         )
+
+
+def log_work(project_name: str, tasks: str, learnings: str | None = None) -> dict:
+    """Write the end-of-session worklog entry and close the session out.
+
+    Opens (or reuses) the project's open session, writes the one worklog
+    row it's allowed to have, then closes the session -- this is the
+    "end of session" signal in the implicit session-handling scheme.
+    """
+    project_id = get_or_create_project(project_name)
+    session_id = get_or_create_open_session(project_id)
+    with db_connection() as conn:
+        cursor = conn.execute(
+            "INSERT INTO worklog (session_id, tasks, learnings) VALUES (?, ?, ?)",
+            (session_id, tasks, learnings),
+        )
+        worklog_id = cursor.lastrowid
+    close_session(session_id)
+    return {
+        "project": project_name,
+        "project_id": project_id,
+        "session_id": session_id,
+        "worklog_id": worklog_id,
+    }
