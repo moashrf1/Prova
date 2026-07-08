@@ -73,3 +73,43 @@ def init_db() -> None:
             )
             """
         )
+
+
+def get_or_create_project(name: str) -> int:
+    """Return the id of the project named `name`, creating it if new.
+
+    Relies on the UNIQUE constraint on projects.name: INSERT OR IGNORE is a
+    no-op if the name already exists, so this is safe to call every time a
+    tool is invoked rather than requiring a separate "create project" step.
+    """
+    with db_connection() as conn:
+        conn.execute("INSERT OR IGNORE INTO projects (name) VALUES (?)", (name,))
+        row = conn.execute(
+            "SELECT id FROM projects WHERE name = ?", (name,)
+        ).fetchone()
+        return row[0]
+
+
+def get_or_create_open_session(project_id: int) -> int:
+    """Return the id of the project's currently-open session (ended_at IS NULL),
+    creating one if none is open."""
+    with db_connection() as conn:
+        row = conn.execute(
+            "SELECT id FROM sessions WHERE project_id = ? AND ended_at IS NULL "
+            "ORDER BY id DESC LIMIT 1",
+            (project_id,),
+        ).fetchone()
+        if row is not None:
+            return row[0]
+        cursor = conn.execute(
+            "INSERT INTO sessions (project_id) VALUES (?)", (project_id,)
+        )
+        return cursor.lastrowid
+
+
+def close_session(session_id: int) -> None:
+    with db_connection() as conn:
+        conn.execute(
+            "UPDATE sessions SET ended_at = datetime('now') WHERE id = ?",
+            (session_id,),
+        )
