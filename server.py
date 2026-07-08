@@ -1,10 +1,12 @@
 from mcp.server.fastmcp import FastMCP
 
 import skills_store
+import work_store
 
 mcp = FastMCP("ai-enablement")
 
 skills_store.init_db()
+work_store.init_db()
 
 
 @mcp.tool()
