@@ -11,6 +11,7 @@
   const pathContainer = document.getElementById("path-container");
   const projectsContainer = document.getElementById("projects-container");
   const decisionsContainer = document.getElementById("decisions-container");
+  const tokenSavingsContainer = document.getElementById("token-savings-container");
 
   const style = getComputedStyle(document.documentElement);
   const cssVar = (name) => style.getPropertyValue(name).trim();
@@ -45,6 +46,26 @@
     container.innerHTML = `<div class="error-state">${message}</div>`;
   }
 
+  function renderTokenSavingsHeadline(period, tokenSaving) {
+    if (!tokenSaving || tokenSaving.baseline_tokens_est == null) {
+      tokenSavingsContainer.innerHTML =
+        '<div class="empty-state">No library snapshot yet -- run the MCP server once to initialize it.</div>';
+      return;
+    }
+    const pct = tokenSaving.saving_pct != null ? `${tokenSaving.saving_pct}%` : "–";
+    const periodLabel = period === "monthly" ? "this month" : "this week";
+    tokenSavingsContainer.innerHTML = `
+      <div class="token-card">
+        <div class="token-headline">
+          <span class="token-pct num">${pct}</span>
+          <span class="token-sublabel">fewer context tokens served ${periodLabel}</span>
+        </div>
+        <div class="token-detail">${tokenSaving.actual_tokens_est.toLocaleString()} tokens served vs. ${tokenSaving.baseline_tokens_est.toLocaleString()} if the whole library had been loaded up front (~${tokenSaving.saving_tokens_est.toLocaleString()} avoided)</div>
+        <div class="token-chart-wrap"><canvas id="chart-token-comparison" role="img" aria-label="Bar chart comparing actual vs baseline tokens across weekly, monthly, and all-time windows"></canvas></div>
+        <div class="token-caveat">${tokenSaving.label}.</div>
+      </div>`;
+  }
+
   async function loadRecap(period) {
     statGrid.querySelectorAll(".stat-card").forEach((card) => card.classList.add("is-loading"));
     try {
@@ -55,6 +76,8 @@
       }
       const recap = await response.json();
       renderStatCards(recap);
+      renderTokenSavingsHeadline(period, recap.token_saving);
+      loadTokenComparisonChart();
       return recap;
     } catch (err) {
       renderError(statGrid, err.message || "Could not load the recap.");
@@ -116,6 +139,73 @@
         ],
       },
       options: barChartOptions(),
+    });
+  }
+
+  let tokenComparisonChart = null;
+
+  async function loadTokenComparisonChart() {
+    let weekly, monthly, cumulative;
+    try {
+      [weekly, monthly, cumulative] = await Promise.all([
+        fetchJson("/api/token-report?period=weekly"),
+        fetchJson("/api/token-report?period=monthly"),
+        fetchJson("/api/token-report"),
+      ]);
+    } catch (err) {
+      return; // headline card above already surfaces the error state
+    }
+    if (weekly.baseline_tokens_est == null) return; // no snapshot yet
+
+    const windows = [weekly, monthly, cumulative];
+    const canvas = document.getElementById("chart-token-comparison");
+    if (!canvas) return;
+
+    if (tokenComparisonChart) {
+      tokenComparisonChart.destroy();
+    }
+    const gridColor = cssVar("--border");
+    const tickColor = cssVar("--ink-muted");
+    tokenComparisonChart = new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels: ["This week", "This month", "All time"],
+        datasets: [
+          {
+            label: "Baseline (whole library)",
+            data: windows.map((w) => w.baseline_tokens_est),
+            backgroundColor: tickColor,
+            borderRadius: 4,
+            maxBarThickness: 40,
+          },
+          {
+            label: "Actual (served)",
+            data: windows.map((w) => w.actual_tokens_est),
+            backgroundColor: cssVar("--accent"),
+            borderRadius: 4,
+            maxBarThickness: 40,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: "bottom",
+            labels: { color: cssVar("--ink"), boxWidth: 12, font: { size: 11 } },
+          },
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: tickColor } },
+          y: {
+            beginAtZero: true,
+            grid: { color: gridColor },
+            ticks: { color: tickColor, precision: 0 },
+          },
+        },
+      },
     });
   }
 

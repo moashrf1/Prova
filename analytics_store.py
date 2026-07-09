@@ -155,6 +155,7 @@ def compute_recap(period: str, now: datetime | None = None) -> dict:
     decisions = decisions_in_range(start, end)
     fetched_skills = skills_fetched_in_range(start, end)
     projects_touched = sorted({s["project"] for s in sessions})
+    token_report = compute_token_report(period, now)
 
     return {
         "period": period,
@@ -170,6 +171,13 @@ def compute_recap(period: str, now: datetime | None = None) -> dict:
         "decisions": decisions,
         "skills_fetched_count": len(fetched_skills),
         "skills_fetched": fetched_skills,
+        "token_saving": {
+            "actual_tokens_est": token_report["actual_tokens_est"],
+            "baseline_tokens_est": token_report["baseline_tokens_est"],
+            "saving_tokens_est": token_report["saving_tokens_est"],
+            "saving_pct": token_report["saving_pct"],
+            "label": token_report["label"],
+        },
         "suggested_framing": (
             f"Summarize the {period} recap: {len(sessions)} session(s) across "
             f"{len(projects_touched)} project(s), {len(worklog)} worklog "
