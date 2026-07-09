@@ -3,28 +3,37 @@
 An MCP server that gives an AI-assisted worker a personal skills library with
 progressive disclosure (Session 1), automatic worklog capture (Session 2) —
 projects, sessions, decisions, and end-of-session summaries, with timing
-always derived, never entered by hand — and recaps plus learning analytics
-that read that accumulated data back (Session 3). See
-`docs/build-plan-session-1.md` through `-session-3.md` for full context, and
-`docs/decision-log.md` for the reasoning behind key choices.
+always derived, never entered by hand — recaps plus learning analytics that
+read that accumulated data back (Session 3), and a read-only web dashboard
+that visualizes all of it (Session 4). See `docs/build-plan-session-1.md`
+through `-session-4.md` for full context, and `docs/decision-log.md` for the
+reasoning behind key choices.
 
 ## What's here
 
 - `server.py` — the MCP server (FastMCP, from the `mcp` SDK). Exposes six
   tools: `list_skills`, `get_skill`, `log_work`, `log_decision`,
-  `generate_recap`, `learning_stats`.
+  `generate_recap`, `learning_stats`. **The only write path** onto the data.
 - `skills_store.py` — reads skill markdown files from `skills/` and logs
   usage to SQLite.
 - `work_store.py` — projects/sessions/worklog/decisions: creation, lookup,
   and the session open/close logic behind `log_work` and `log_decision`.
-- `analytics_store.py` — read-only queries over the accumulated data:
-  temporal aggregates for `generate_recap`, cumulative/path-aware stats for
-  `learning_stats`. Nothing here writes.
+- `analytics_store.py` — read-only queries over the accumulated data
+  (every connection opens SQLite in `mode=ro`): temporal aggregates for
+  `generate_recap`, cumulative/path-aware stats for `learning_stats`, plus
+  per-project rollups, recent decisions, and skill usage counts for the
+  dashboard. Nothing here writes, and now nothing here *can*.
+- `web/app.py` — a FastAPI app exposing the same `analytics_store` queries
+  as JSON over HTTP, and serving `static/` (the dashboard). A second,
+  read-only entry point onto `data/enablement.db` — it never writes.
+- `static/` — the dashboard: `index.html`, `style.css`, `app.js`, and a
+  locally vendored `vendor/chart.umd.min.js` (Chart.js, no CDN, no build
+  step).
 - `skills/*.md` — one file per skill: YAML frontmatter (the lightweight
   metadata layer) + a markdown body (the full content, loaded on demand).
 - `data/enablement.db` — SQLite database: `skill_usage`, `projects`,
-  `sessions`, `worklog`, `decisions` (created automatically on first run).
-  Not checked into git.
+  `sessions`, `worklog`, `decisions` (created automatically on first run of
+  the MCP server). Not checked into git.
 - `docs/` — the build plans and the decision log.
 
 ## Setup
@@ -47,6 +56,42 @@ MCP Inspector, or your own client) at it with:
 ```bash
 mcp dev server.py   # MCP Inspector, if you have a browser available
 ```
+
+## Running the dashboard
+
+The MCP server must have run at least once so `data/enablement.db` exists
+(the dashboard doesn't create it).
+
+```bash
+uvicorn web.app:app --reload
+```
+
+Then open <http://127.0.0.1:8000/>. The dashboard is **read-only** — it
+opens the database in SQLite's `mode=ro`, so it cannot write even if there
+were a bug; the MCP server above is the only write path. It's a second,
+independent entry point onto the same `data/enablement.db` file: run both at
+once, in separate terminals, with no coordination needed between them.
+
+### Endpoints
+
+All under `/api/`, all `GET`, all read-only, all reusing `analytics_store.py`:
+
+| Endpoint | Returns |
+|---|---|
+| `/api/recap?period=weekly\|monthly` | Same numbers as the `generate_recap` MCP tool |
+| `/api/learning-stats?path=<slug>` | Same as the `learning_stats` MCP tool (path optional) |
+| `/api/projects` | Per-project session count, total time, last activity |
+| `/api/decisions?limit=N` | Most recent N decisions (default 20) |
+| `/api/skills` | Every skill with its all-time fetch count (0 if never fetched) |
+
+### Dashboard sections
+
+Recap stat cards (with the weekly/monthly toggle) → activity charts (time
+per project, skill fetch counts) → learning-path progress ("N of M
+`product-manager`-track skills fetched", with fetched/remaining skills as
+chips) → a projects table → a recent-decisions log (the visible
+authorship/IP trail). Every section handles the empty-database case
+(sensible "nothing yet" messages, no errors) and both light and dark mode.
 
 ## Tools
 
