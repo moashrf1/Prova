@@ -4,6 +4,39 @@ Authorship and reasoning record for the AI Enablement System build, per the
 "full authorship evidence from commit #1" guardrail. One entry per meaningful
 decision, newest first.
 
+## 2026-07-09 — Session 4: hardened analytics_store.py's own connection to read-only, instead of a separate read-only layer in web/app.py
+
+**Context:** the build doc asked for the web layer to open SQLite read-only
+(`mode=ro`) so a bug in the dashboard literally cannot write, while also
+insisting on reusing Session 3's query logic rather than duplicating it.
+Those two asks are in tension if the read-only connection lives only in
+`web/app.py`, since `analytics_store.py`'s functions each open their own
+connection internally.
+
+**Decision:** `analytics_store.py` already documented itself as read-only
+("nothing here writes") and, on inspection, every function is in fact a
+pure `SELECT`. So `db_connection()` inside `analytics_store.py` itself now
+opens with `mode=ro` (via `DB_PATH.as_uri() + "?mode=ro"`, `uri=True`),
+turning a documented convention into an enforced one. `web/app.py` then
+imports `analytics_store` directly and calls the exact same
+`compute_recap`/`compute_learning_stats` functions the MCP tools call --
+genuine reuse, not a parallel read-only wrapper. The read-only guarantee
+now covers the MCP tool path too, which is strictly stronger than the
+build doc asked for, at no cost (those tools were always read-only in
+practice).
+
+**Rejected alternative:** give `web/app.py` its own read-only connection
+and either duplicate the queries or thread a connection parameter through
+every `analytics_store` function. Rejected as unnecessary complexity once
+it was clear the module's connections could just be read-only everywhere.
+
+**Verified:** existing 27 Session 1-3 tests still pass unchanged against
+the now-read-only connection (they were always read-only in practice); a
+direct write attempt through `analytics_store.db_connection()` raises
+`sqlite3.OperationalError: attempt to write a readonly database`; and
+`/api/recap` served over real HTTP (uvicorn) returns output identical to
+calling `analytics_store.compute_recap` directly.
+
 ## 2026-07-09 — Session 3: `monthly` is a rolling 30-day window, not a calendar month
 
 **Context:** `generate_recap(period)` needed a concrete definition of

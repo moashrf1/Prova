@@ -2,9 +2,16 @@
 
 Unlike skills_store.py and work_store.py, nothing here writes. Every
 function is a pure query: given a date range (or nothing, for the
-cumulative case), return structured data. The two public entry points
-(compute_recap, compute_learning_stats) are what server.py's tools call;
-everything else is a query helper kept small enough to unit test directly.
+cumulative case), return structured data. The public entry points
+(compute_recap, compute_learning_stats, project_rollups, recent_decisions,
+skill_usage_counts) are what server.py's MCP tools and web/app.py's HTTP
+endpoints both call -- one set of tested query logic, two entry points.
+
+Every connection here opens in SQLite read-only mode (`mode=ro`): this
+module documents itself as read-only, so the connection now enforces that
+rather than just describing it -- a bug here literally cannot write,
+which matters once the web dashboard (Session 4) is a second reader of
+the same file the MCP server writes to.
 
 `monthly` is defined as a rolling 30-day window, not a calendar month --
 see docs/decision-log.md. All timestamps in the database are UTC (SQLite's
@@ -31,7 +38,12 @@ PERIOD_WINDOWS = {
 
 @contextmanager
 def db_connection():
-    conn = sqlite3.connect(DB_PATH)
+    if not DB_PATH.exists():
+        raise FileNotFoundError(
+            f"{DB_PATH} does not exist yet -- run the MCP server (server.py) "
+            "at least once to initialize it."
+        )
+    conn = sqlite3.connect(f"{DB_PATH.as_uri()}?mode=ro", uri=True)
     try:
         yield conn
     finally:
