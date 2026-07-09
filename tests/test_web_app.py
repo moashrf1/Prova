@@ -138,3 +138,40 @@ def test_skills_endpoint_includes_seed_skill(client):
     assert response.status_code == 200
     names = {s["name"] for s in response.json()}
     assert "skill-a" in names
+
+
+def test_token_report_endpoint_matches_analytics_store(client):
+    skills_store.record_library_snapshot()
+    skill = skills_store.load_all_skills()[0]
+    chars, tokens_est = skills_store.measure_listing(skill)
+    skills_store.log_usage(skill["name"], "listed", chars, tokens_est)
+
+    response = client.get("/api/token-report", params={"period": "weekly"})
+
+    assert response.status_code == 200
+    body = response.json()
+    expected = analytics_store.compute_token_report("weekly")
+    assert body["actual_chars"] == expected["actual_chars"] == chars
+    assert body["baseline_tokens_est"] == expected["baseline_tokens_est"]
+    assert body["saving_tokens_est"] == expected["saving_tokens_est"]
+
+
+def test_token_report_endpoint_cumulative_when_period_omitted(client):
+    skills_store.record_library_snapshot()
+
+    response = client.get("/api/token-report")
+
+    assert response.status_code == 200
+    assert response.json()["period"] is None
+
+
+def test_token_report_endpoint_rejects_bad_period(client):
+    response = client.get("/api/token-report", params={"period": "yearly"})
+    assert response.status_code == 400
+
+
+def test_token_report_endpoint_handles_no_snapshot_yet(client):
+    response = client.get("/api/token-report", params={"period": "weekly"})
+
+    assert response.status_code == 200
+    assert response.json()["baseline_tokens_est"] is None

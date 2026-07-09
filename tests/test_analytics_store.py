@@ -81,11 +81,21 @@ def seed_decision(db_path, session_id, decision, reasoning, created_at, rejected
         )
 
 
-def seed_skill_usage(db_path, skill_name, action, created_at):
+def seed_skill_usage(db_path, skill_name, action, created_at, chars=None, tokens_est=None):
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "INSERT INTO skill_usage (skill_name, action, created_at) VALUES (?, ?, ?)",
-            (skill_name, action, created_at),
+            "INSERT INTO skill_usage (skill_name, action, created_at, chars, tokens_est) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (skill_name, action, created_at, chars, tokens_est),
+        )
+
+
+def seed_library_snapshot(db_path, total_skills, total_chars, total_tokens_est, created_at):
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO library_snapshots (total_skills, total_chars, total_tokens_est, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (total_skills, total_chars, total_tokens_est, created_at),
         )
 
 
@@ -267,3 +277,116 @@ def test_skill_usage_counts_excludes_nonexistent_skill_names(isolated_analytics)
 
     assert "typo-name" not in names
     assert names == {"skill-a", "skill-b", "skill-c"}
+
+
+def test_library_baseline_returns_none_without_a_snapshot(isolated_analytics):
+    assert analytics_store.library_baseline() is None
+
+
+def test_library_baseline_returns_most_recent_snapshot(isolated_analytics):
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+
+    seed_library_snapshot(db_path, 3, 3000, 750, ts(now, 2))
+    seed_library_snapshot(db_path, 4, 4000, 1000, ts(now, 1))
+
+    baseline = analytics_store.library_baseline()
+
+    assert baseline["total_skills"] == 4
+    assert baseline["chars"] == 4000
+    assert baseline["tokens_est"] == 1000
+
+
+def test_token_report_weekly_window_excludes_older_usage(isolated_analytics):
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+
+    seed_library_snapshot(db_path, 3, 4000, 1000, ts(now, 30))
+    seed_skill_usage(db_path, "skill-a", "listed", ts(now, 1), chars=100, tokens_est=25)
+    seed_skill_usage(db_path, "skill-a", "fetched", ts(now, 1), chars=300, tokens_est=75)
+    seed_skill_usage(db_path, "skill-b", "fetched", ts(now, 20), chars=500, tokens_est=125)
+
+    report = analytics_store.compute_token_report("weekly", now=now)
+
+    assert report["actual_chars"] == 400  # only the two rows within 7 days
+    assert report["actual_tokens_est"] == 100
+    assert report["baseline_chars"] == 4000
+    assert report["baseline_tokens_est"] == 1000
+    assert report["saving_tokens_est"] == 900
+    assert report["saving_pct"] == 90.0
+
+
+def test_token_report_monthly_window_includes_wider_range(isolated_analytics):
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+
+    seed_library_snapshot(db_path, 3, 4000, 1000, ts(now, 30))
+    seed_skill_usage(db_path, "skill-a", "fetched", ts(now, 1), chars=300, tokens_est=75)
+    seed_skill_usage(db_path, "skill-b", "fetched", ts(now, 20), chars=500, tokens_est=125)
+
+    report = analytics_store.compute_token_report("monthly", now=now)
+
+    assert report["actual_chars"] == 800
+
+
+def test_token_report_cumulative_ignores_date_window(isolated_analytics):
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+
+    seed_library_snapshot(db_path, 3, 4000, 1000, ts(now, 30))
+    seed_skill_usage(db_path, "skill-a", "fetched", ts(now, 90), chars=300, tokens_est=75)
+    seed_skill_usage(db_path, "skill-b", "fetched", ts(now, 200), chars=500, tokens_est=125)
+
+    report = analytics_store.compute_token_report(None, now=now)
+
+    assert report["period"] is None
+    assert report["range_start"] is None
+    assert report["actual_chars"] == 800  # both rows counted, regardless of age
+
+
+def test_token_report_derives_tokens_est_from_summed_chars_not_summed_estimates(isolated_analytics):
+    """Regression test for the rounding-consistency bug found during Session
+    6: summing individually floor-divided per-row tokens_est can drift from
+    flooring the summed chars once. Seeded so the two methods would disagree
+    if the bug were reintroduced (three rows of 7 chars/1 token each: sum of
+    per-row floors = 3, but floor(21/4) = 5)."""
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+
+    seed_library_snapshot(db_path, 1, 1000, 250, ts(now, 30))
+    for _ in range(3):
+        seed_skill_usage(db_path, "skill-a", "fetched", ts(now, 1), chars=7, tokens_est=1)
+
+    report = analytics_store.compute_token_report("weekly", now=now)
+
+    assert report["actual_chars"] == 21
+    assert report["actual_tokens_est"] == 5  # floor(21 / 4), not 3 (sum of per-row floors)
+
+
+def test_token_report_no_snapshot_returns_none_baseline(isolated_analytics):
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+    seed_skill_usage(db_path, "skill-a", "fetched", ts(now, 1), chars=100, tokens_est=25)
+
+    report = analytics_store.compute_token_report("weekly", now=now)
+
+    assert report["baseline_tokens_est"] is None
+    assert report["saving_tokens_est"] is None
+    assert report["saving_pct"] is None
+    assert report["actual_chars"] == 100
+
+
+def test_recap_includes_token_saving_block_matching_token_report(isolated_analytics):
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+
+    seed_library_snapshot(db_path, 3, 4000, 1000, ts(now, 30))
+    seed_skill_usage(db_path, "skill-a", "fetched", ts(now, 1), chars=300, tokens_est=75)
+
+    recap = analytics_store.compute_recap("weekly", now=now)
+    report = analytics_store.compute_token_report("weekly", now=now)
+
+    assert recap["token_saving"]["actual_tokens_est"] == report["actual_tokens_est"]
+    assert recap["token_saving"]["baseline_tokens_est"] == report["baseline_tokens_est"]
+    assert recap["token_saving"]["saving_tokens_est"] == report["saving_tokens_est"]
+    assert recap["token_saving"]["saving_pct"] == report["saving_pct"]
