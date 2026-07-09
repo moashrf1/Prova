@@ -2,12 +2,14 @@ from mcp.server.fastmcp import FastMCP
 
 import analytics_store
 import skills_store
+import token_metrics
 import work_store
 
 mcp = FastMCP("ai-enablement")
 
 skills_store.init_db()
 work_store.init_db()
+skills_store.record_library_snapshot()
 
 
 @mcp.tool()
@@ -15,7 +17,8 @@ def list_skills() -> list[dict]:
     """List all available skills with lightweight metadata only (no full content)."""
     skills = skills_store.load_all_skills()
     for skill in skills:
-        skills_store.log_usage(skill["name"], "listed")
+        chars, tokens_est = skills_store.measure_listing(skill)
+        skills_store.log_usage(skill["name"], "listed", chars, tokens_est)
     return [
         {
             "name": skill["name"],
@@ -35,7 +38,8 @@ def get_skill(skill_name: str) -> str:
     if skill is None:
         skills_store.log_usage(skill_name, "fetched")
         return f"No skill named '{skill_name}' was found. Use list_skills to see available skills."
-    skills_store.log_usage(skill["name"], "fetched")
+    chars, tokens_est = token_metrics.measure(skill["body"])
+    skills_store.log_usage(skill["name"], "fetched", chars, tokens_est)
     return skill["body"]
 
 

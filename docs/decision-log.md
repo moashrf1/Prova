@@ -4,6 +4,48 @@ Authorship and reasoning record for the AI Enablement System build, per the
 "full authorship evidence from commit #1" guardrail. One entry per meaningful
 decision, newest first.
 
+## 2026-07-09 — Session 6: "context content tokens (estimated)," not "API tokens billed"
+
+**Context:** the project's headline promise is token savings via
+progressive disclosure, and the proposal needs a number. The MCP server
+can't see the client's actual billed API token usage (that lives in the
+Claude client/API layer, outside this process) -- but it can measure
+exactly the thing progressive disclosure changes: how much content it
+serves.
+
+**Decision:** measure and label the metric honestly as "context content
+tokens (estimated)" -- the size of `list_skills` output plus only the
+skill bodies actually fetched, versus the size of the whole library as
+the counterfactual baseline. Never call this "API tokens billed."
+
+**Why this matters more than it might seem:** an inflated or
+mislabeled number is the fastest way to lose credibility in a proposal
+that's supposed to demonstrate rigor. A smaller, honestly-scoped, clearly
+-labeled number that's exactly true beats a bigger, vaguer one that
+invites a "wait, is that actually what gets billed?" question in the
+room where it matters.
+
+## 2026-07-09 — Session 6: chars/4 heuristic, one shared helper, raw chars always stored
+
+**Context:** need a token estimate without bundling a real tokenizer
+dependency.
+
+**Decision:** `tokens_est = chars // 4` (a standard rough heuristic for
+English text), implemented in exactly one place (`token_metrics.py`) that
+every call site routes through. Both `chars` and `tokens_est` are stored
+everywhere this is used (`skill_usage` columns, `library_snapshots`
+columns) -- not just the estimate -- so the raw character counts survive
+if the heuristic is ever swapped for a real tokenizer later; nothing
+downstream needs to be recomputed from scratch, only re-derived from
+`chars`.
+
+**Rejected alternative:** bundling a real tokenizer (e.g. `tiktoken`).
+Rejected for now: it's an extra dependency for marginal accuracy gain on
+a *comparative* metric, where both the actual and baseline sides use the
+identical heuristic -- the saving percentage is roughly heuristic-
+invariant even if the absolute numbers would shift slightly with a real
+tokenizer. Swappable later by changing `token_metrics.py` alone.
+
 ## 2026-07-09 — Session 5: orchestration — three peer subagents, not a code orchestrator
 
 **Context:** with all six MCP tools built (Sessions 1-3), the recurring
