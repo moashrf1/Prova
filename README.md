@@ -4,10 +4,11 @@ An MCP server that gives an AI-assisted worker a personal skills library with
 progressive disclosure (Session 1), automatic worklog capture (Session 2) —
 projects, sessions, decisions, and end-of-session summaries, with timing
 always derived, never entered by hand — recaps plus learning analytics that
-read that accumulated data back (Session 3), and a read-only web dashboard
-that visualizes all of it (Session 4). See `docs/build-plan-session-1.md`
-through `-session-4.md` for full context, and `docs/decision-log.md` for the
-reasoning behind key choices.
+read that accumulated data back (Session 3), a read-only web dashboard that
+visualizes all of it (Session 4), and three specialized Claude Code
+subagents that compose those tools into recurring workflows (Session 5). See
+`docs/build-plan-session-1.md` through `-session-5.md` for full context, and
+`docs/decision-log.md` for the reasoning behind key choices.
 
 ## What's here
 
@@ -31,6 +32,9 @@ reasoning behind key choices.
   step).
 - `skills/*.md` — one file per skill: YAML frontmatter (the lightweight
   metadata layer) + a markdown body (the full content, loaded on demand).
+- `.claude/agents/` — three subagents (`worklog-agent`, `skills-agent`,
+  `analytics-agent`) that compose the MCP tools above into recurring
+  workflows. See "Subagents" below.
 - `data/enablement.db` — SQLite database: `skill_usage`, `projects`,
   `sessions`, `worklog`, `decisions` (created automatically on first run of
   the MCP server). Not checked into git.
@@ -149,6 +153,36 @@ stretch of work with exactly one worklog entry.
 `learning_stats` answers "how far have I come overall" (everything, ever).
 The same accumulated tables feed both — the difference is entirely in the
 date filter, not the data.
+
+## Subagents
+
+Three Claude Code subagents (`.claude/agents/*.md`) compose the MCP tools
+above into recurring workflows, each scoped to only the tools its role
+needs:
+
+| Agent | Tools | Role |
+|---|---|---|
+| `worklog-agent` | `log_work`, `log_decision` | Turns a description of a work session into a worklog entry, logging any decisions *before* the closing `log_work` call (which ends the session) |
+| `skills-agent` | `list_skills`, `get_skill` | Picks the right skill for a task via progressive disclosure — lists everything first, fetches only what's genuinely relevant |
+| `analytics-agent` | `generate_recap`, `learning_stats` | Turns raw recap/stats data into a short readable answer — recaps are temporal, learning stats are cumulative, and it doesn't blur the two |
+
+The main Claude Code session is the orchestrator: it reads each agent's
+`description` and routes a request to the matching specialist(s), then
+composes their results. For example:
+
+```
+"Log this work on project X, then show me a recap and my product-manager
+track progress"
+```
+
+routes the logging half to `worklog-agent` and the recap/progress half to
+`analytics-agent`, and the main session combines both replies into one
+answer — each subagent does its work in its own context, so the detail of
+those tool calls never floods the main conversation.
+
+Try any of them directly by naming the agent: *"use the skills-agent to
+help with this SQL problem"*, *"use the worklog-agent to log what I just
+did"*, *"use the analytics-agent to show my weekly recap."*
 
 ## Adding a skill
 

@@ -4,6 +4,93 @@ Authorship and reasoning record for the AI Enablement System build, per the
 "full authorship evidence from commit #1" guardrail. One entry per meaningful
 decision, newest first.
 
+## 2026-07-09 — Session 5: orchestration — three peer subagents, not a code orchestrator
+
+**Context:** with all six MCP tools built (Sessions 1-3), the recurring
+need is composing them into workflows ("wrap up my session" = summarize →
+log work → log decisions → show a recap), not writing new tools.
+
+**Decision:** three Claude Code subagents (`.claude/agents/worklog-agent.md`,
+`skills-agent.md`, `analytics-agent.md`), each scoped via `tools:` to
+exactly the MCP tools its role needs, with the main Claude Code session as
+orchestrator reading each agent's `description` to route work. Built and
+validated one agent fully (Worklog) before adding the other two, so the
+subagent mechanics were understood on a single well-scoped case before
+scaling the pattern.
+
+**Rejected alternative:** a hand-rolled Python orchestrator that calls the
+MCP tools directly in whatever order a script decides. Rejected because
+subagents teach the transferable pattern (if this project goes official,
+each employee's own Claude Code session orchestrates their own subagents
+with zero extra infrastructure) and because a hand-rolled orchestrator
+only earns its complexity once fine-grained routing/state control is
+actually needed -- which hasn't come up.
+
+**Why three peers instead of one bigger agent:** retrieval (Skills),
+summarization (Worklog), and analysis (Analytics) are genuinely different
+tasks. Merging them into one agent with all six tools would mean every
+invocation carries permissions and context it doesn't need for that
+specific job -- the opposite of the least-privilege design already used
+throughout this project (e.g. `analytics_store`'s read-only connections).
+
+**Verified, not assumed:** every claim below was checked against real
+tool output or real database state from an actual delegation, not
+inferred from reading the agent files:
+- Fetched the official subagent docs directly (rather than trust a
+  subagent's secondhand summary) and found one real delta from the build
+  doc: nested subagent spawning is supported since v2.1.172 (capped at
+  depth 5), not blocked at one level as the doc assumed. Doesn't change
+  the design -- none of these three agents need the `Agent` tool.
+- Worklog Agent: a real delegation produced a decision row timestamped
+  *before* its worklog row, and the session's `ended_at` was set --
+  confirming the "decisions before the closing log_work" ordering rule
+  actually held, not just that the prompt asked for it.
+- Skills Agent: `skill_usage` showed all 6 skills `listed` but exactly 1
+  `fetched` for a real question -- progressive disclosure held under
+  actual use, not only in the system prompt's wording.
+- Full orchestration: a single request touching both Worklog and
+  Analytics agents produced a composed reply whose every number (session
+  count, decision count, distinct skills fetched, path progress) matched
+  the database exactly.
+
+## 2026-07-09 — Session 5: subagent format verified; one delta from the build doc
+
+**Context:** Phase 1 of the Session 5 doc asked me to confirm the current
+`.claude/agents/` format against the official docs before building anything,
+since the doc itself warned the format could have drifted.
+
+**Method:** fetched `https://code.claude.com/docs/en/sub-agents.md` directly
+(not a secondhand summary) and cross-checked a subagent's own report against
+it, since that report made a claim that contradicted this session's own
+system-level description of subagent behavior.
+
+**Findings, confirmed accurate:**
+- Files live in `.claude/agents/` (project-scoped, checked into git) or
+  `~/.claude/agents/` (user-scoped, all projects).
+- Only `name` and `description` are required. `tools` is a comma-separated
+  allowlist (e.g. `Read, Grep, Bash`); **omitting it inherits every tool
+  from the parent session** -- the opposite of "no tools," so an explicit
+  allowlist is mandatory to get the least-privilege design in §1.3 of the
+  build doc. `disallowedTools` (a denylist) also exists and is real.
+- `model` defaults to `inherit` (same model as the main conversation) if
+  omitted.
+- Individual MCP tools are referenced in `tools`/`disallowedTools` as
+  `mcp__<server>__<tool>` (e.g. `mcp__ai-enablement__log_work`); `mcp__<server>`
+  or `mcp__<server>__*` grants/denies every tool from that server at once.
+
+**One real delta from the build doc:** "subagents are one level deep and
+cannot spawn other subagents" is **no longer accurate** as a platform-wide
+constraint -- nested subagent spawning has been supported since Claude Code
+v2.1.172 (depth capped at 5, not configurable). The build doc's own
+verification request correctly anticipated that this could have changed.
+
+**Why this doesn't change the design:** none of the three planned agents
+(Skills / Worklog / Analytics) need to spawn subagents of their own --
+each is a leaf specialist. Omitting the `Agent` tool from each agent's
+`tools` allowlist blocks spawning for that agent regardless of what the
+platform allows elsewhere, so the doc's one-orchestrator/three-peers shape
+holds without relying on the (now-inaccurate) hard platform limit.
+
 ## 2026-07-09 — Session 4: vendored Chart.js instead of linking the CDN
 
 **Context:** the build doc's Phase 4 instructions say "Add Chart.js (via
