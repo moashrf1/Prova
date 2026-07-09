@@ -71,3 +71,70 @@ def test_recap_endpoint_returns_503_when_db_missing(tmp_path, monkeypatch):
     response = client.get("/api/recap", params={"period": "weekly"})
 
     assert response.status_code == 503
+
+
+def test_learning_stats_endpoint(client):
+    response = client.get("/api/learning-stats", params={"path": "product-manager"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["path"] == "product-manager"
+    assert "path_skill_total" in body
+
+
+def test_learning_stats_endpoint_without_path(client):
+    response = client.get("/api/learning-stats")
+
+    assert response.status_code == 200
+    assert "path" not in response.json()
+
+
+def test_projects_endpoint(client):
+    with sqlite3.connect(work_store.DB_PATH) as conn:
+        conn.execute("INSERT INTO projects (name) VALUES ('proj-x')")
+        conn.commit()
+
+    response = client.get("/api/projects")
+
+    assert response.status_code == 200
+    names = {p["name"] for p in response.json()}
+    assert "proj-x" in names
+
+
+def test_decisions_endpoint_respects_limit(client):
+    with sqlite3.connect(work_store.DB_PATH) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("INSERT INTO projects (name) VALUES ('proj-y')")
+        pid = conn.execute("SELECT id FROM projects WHERE name='proj-y'").fetchone()[0]
+        conn.execute(
+            "INSERT INTO sessions (project_id, started_at, ended_at) VALUES (?, datetime('now'), datetime('now'))",
+            (pid,),
+        )
+        sid = conn.execute("SELECT id FROM sessions").fetchone()[0]
+        conn.execute(
+            "INSERT INTO decisions (session_id, decision, reasoning) VALUES (?, 'd1', 'r1')",
+            (sid,),
+        )
+        conn.execute(
+            "INSERT INTO decisions (session_id, decision, reasoning) VALUES (?, 'd2', 'r2')",
+            (sid,),
+        )
+        conn.commit()
+
+    response = client.get("/api/decisions", params={"limit": 1})
+
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+
+
+def test_decisions_endpoint_rejects_bad_limit(client):
+    response = client.get("/api/decisions", params={"limit": 0})
+    assert response.status_code == 400
+
+
+def test_skills_endpoint_includes_seed_skill(client):
+    response = client.get("/api/skills")
+
+    assert response.status_code == 200
+    names = {s["name"] for s in response.json()}
+    assert "skill-a" in names

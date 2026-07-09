@@ -212,3 +212,90 @@ def compute_learning_stats(path: str | None = None) -> dict:
         stats["path_skills_remaining"] = remaining_on_path
 
     return stats
+
+
+def project_rollups() -> list[dict]:
+    """Per-project rollup for the dashboard's overview table: session count,
+    total derived time (closed sessions only), and last activity timestamp
+    (across both open and closed sessions)."""
+    with db_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT projects.id, projects.name, projects.status,
+                   sessions.id, sessions.started_at, sessions.ended_at
+            FROM projects
+            LEFT JOIN sessions ON sessions.project_id = projects.id
+            """
+        ).fetchall()
+
+    projects: dict[int, dict] = {}
+    for project_id, name, status, session_id, started_at, ended_at in rows:
+        entry = projects.setdefault(
+            project_id,
+            {
+                "name": name,
+                "status": status,
+                "session_count": 0,
+                "total_duration_seconds": 0.0,
+                "last_activity": None,
+            },
+        )
+        if session_id is None:
+            continue
+        entry["session_count"] += 1
+        if ended_at is not None:
+            entry["total_duration_seconds"] += _duration_seconds(started_at, ended_at)
+        latest = ended_at or started_at
+        if entry["last_activity"] is None or latest > entry["last_activity"]:
+            entry["last_activity"] = latest
+
+    return sorted(projects.values(), key=lambda p: p["name"])
+
+
+def recent_decisions(limit: int = 20) -> list[dict]:
+    with db_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT decisions.decision, decisions.reasoning,
+                   decisions.rejected_alternative, decisions.created_at, projects.name
+            FROM decisions
+            JOIN sessions ON sessions.id = decisions.session_id
+            JOIN projects ON projects.id = sessions.project_id
+            ORDER BY decisions.created_at DESC, decisions.id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [
+        {
+            "decision": r[0],
+            "reasoning": r[1],
+            "rejected_alternative": r[2],
+            "created_at": r[3],
+            "project": r[4],
+        }
+        for r in rows
+    ]
+
+
+def skill_usage_counts() -> list[dict]:
+    """Every current skill with its all-time fetch count (0 if never
+    fetched), so the dashboard can show a full usage picture, not just the
+    skills that happen to have activity."""
+    with db_connection() as conn:
+        rows = conn.execute(
+            "SELECT skill_name, COUNT(*) FROM skill_usage "
+            "WHERE action = 'fetched' GROUP BY skill_name"
+        ).fetchall()
+    counts = dict(rows)
+
+    return [
+        {
+            "name": skill["name"],
+            "title": skill["title"],
+            "category": skill["category"],
+            "path": skill["path"],
+            "fetch_count": counts.get(skill["name"], 0),
+        }
+        for skill in skills_store.load_all_skills()
+    ]

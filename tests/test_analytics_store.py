@@ -196,3 +196,74 @@ def test_learning_stats_without_path_omits_path_keys(isolated_analytics):
         "total_decisions": 0,
         "total_distinct_skills_fetched": 0,
     }
+
+
+def test_project_rollups_aggregates_sessions_and_duration(isolated_analytics):
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+
+    seed_session(db_path, "proj-a", ts(now, 5), ts(now, 5, hours=1))
+    seed_session(db_path, "proj-a", ts(now, 1), ts(now, 1, hours=2))
+    seed_session(db_path, "proj-b", ts(now, 3), None)  # open
+
+    rollups = {r["name"]: r for r in analytics_store.project_rollups()}
+
+    assert rollups["proj-a"]["session_count"] == 2
+    assert rollups["proj-a"]["total_duration_seconds"] == 10800.0  # 1h + 2h
+    assert rollups["proj-a"]["last_activity"] == ts(now, 1, hours=2)
+
+    assert rollups["proj-b"]["session_count"] == 1
+    assert rollups["proj-b"]["total_duration_seconds"] == 0.0
+    assert rollups["proj-b"]["last_activity"] == ts(now, 3)
+
+
+def test_project_rollups_includes_project_with_no_sessions(isolated_analytics):
+    with sqlite3.connect(analytics_store.DB_PATH) as conn:
+        conn.execute("INSERT INTO projects (name) VALUES ('untouched-proj')")
+        conn.commit()
+
+    rollups = {r["name"]: r for r in analytics_store.project_rollups()}
+
+    assert rollups["untouched-proj"]["session_count"] == 0
+    assert rollups["untouched-proj"]["total_duration_seconds"] == 0.0
+    assert rollups["untouched-proj"]["last_activity"] is None
+
+
+def test_recent_decisions_ordered_newest_first_and_respects_limit(isolated_analytics):
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+
+    session_id = seed_session(db_path, "proj", ts(now, 5), ts(now, 5, hours=1))
+    seed_decision(db_path, session_id, "older decision", "reasoning A", ts(now, 3))
+    seed_decision(db_path, session_id, "newer decision", "reasoning B", ts(now, 1))
+
+    decisions = analytics_store.recent_decisions(limit=1)
+
+    assert len(decisions) == 1
+    assert decisions[0]["decision"] == "newer decision"
+
+
+def test_skill_usage_counts_includes_zero_fetch_skills(isolated_analytics):
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+
+    seed_skill_usage(db_path, "skill-a", "fetched", ts(now, 1))
+    seed_skill_usage(db_path, "skill-a", "fetched", ts(now, 2))
+
+    counts = {s["name"]: s["fetch_count"] for s in analytics_store.skill_usage_counts()}
+
+    assert counts["skill-a"] == 2
+    assert counts["skill-b"] == 0
+    assert counts["skill-c"] == 0
+
+
+def test_skill_usage_counts_excludes_nonexistent_skill_names(isolated_analytics):
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+
+    seed_skill_usage(db_path, "typo-name", "fetched", ts(now, 1))
+
+    names = {s["name"] for s in analytics_store.skill_usage_counts()}
+
+    assert "typo-name" not in names
+    assert names == {"skill-a", "skill-b", "skill-c"}

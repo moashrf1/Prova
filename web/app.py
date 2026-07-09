@@ -21,6 +21,13 @@ import analytics_store  # noqa: E402
 app = FastAPI(title="AI Enablement Dashboard")
 
 
+def _run_readonly(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @app.get("/api/recap")
 def get_recap(period: str = "weekly"):
     if period not in analytics_store.PERIOD_WINDOWS:
@@ -28,10 +35,29 @@ def get_recap(period: str = "weekly"):
             status_code=400,
             detail=f"period must be one of {list(analytics_store.PERIOD_WINDOWS)}",
         )
-    try:
-        return analytics_store.compute_recap(period)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return _run_readonly(analytics_store.compute_recap, period)
+
+
+@app.get("/api/learning-stats")
+def get_learning_stats(path: str | None = None):
+    return _run_readonly(analytics_store.compute_learning_stats, path)
+
+
+@app.get("/api/projects")
+def get_projects():
+    return _run_readonly(analytics_store.project_rollups)
+
+
+@app.get("/api/decisions")
+def get_decisions(limit: int = 20):
+    if limit < 1:
+        raise HTTPException(status_code=400, detail="limit must be at least 1")
+    return _run_readonly(analytics_store.recent_decisions, limit)
+
+
+@app.get("/api/skills")
+def get_skills():
+    return _run_readonly(analytics_store.skill_usage_counts)
 
 
 app.mount("/", StaticFiles(directory=str(PROJECT_ROOT / "static"), html=True), name="static")
