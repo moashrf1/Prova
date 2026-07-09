@@ -4,6 +4,35 @@ Authorship and reasoning record for the AI Enablement System build, per the
 "full authorship evidence from commit #1" guardrail. One entry per meaningful
 decision, newest first.
 
+## 2026-07-09 — Session 3: `monthly` is a rolling 30-day window, not a calendar month
+
+**Context:** `generate_recap(period)` needed a concrete definition of
+"monthly" before the query helpers could be written.
+
+**Decision:** rolling 30 days ending now, exactly parallel to `weekly`
+(rolling 7 days). Both periods use the same `period_bounds()` logic with
+only the window length differing.
+
+**Rejected alternative:** calendar month (1st to today, or 1st-to-last-day).
+Rejected because it makes the recap's meaning depend on what day of the
+month you happen to run it — on the 2nd, a "monthly" recap would cover
+almost nothing, while at the end of the month it would cover almost
+everything. A rolling window always means the same thing regardless of
+when you ask for it.
+
+## 2026-07-09 — Session 3: skills_fetched excludes typo'd/nonexistent skill names
+
+**Context:** `get_skill` logs a `fetched` row in `skill_usage` even when the
+name doesn't match any real skill (a Session 1 decision, so failed lookups
+are visible in analytics). That means a straight `DISTINCT skill_name`
+query over `skill_usage` could count a typo as a "skill fetched."
+
+**Decision:** both `skills_fetched_in_range` (recap) and the cumulative
+count in `compute_learning_stats` intersect the distinct fetched names
+against the names that currently exist in `skills/` (via
+`skills_store.load_all_skills()`), so only real skills count toward
+"skills fetched" or path progress.
+
 ## 2026-07-08 — Session 2: implicit sessions, not start_session/end_session
 
 **Context:** the schema says a session has exactly one worklog entry but many
