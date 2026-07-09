@@ -221,6 +221,60 @@ section h2 {
   max-height: 280px;
 }
 
+/* Token savings ------------------------------------------------------------ */
+.token-card {
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.token-headline {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.token-headline .token-pct {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.token-headline .token-sublabel {
+  color: var(--ink-muted);
+  font-size: 0.9375rem;
+}
+
+.token-detail {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.875rem;
+  color: var(--ink);
+}
+
+.token-chart-wrap {
+  max-height: 220px;
+}
+
+.token-chart-wrap canvas {
+  max-height: 220px;
+}
+
+.token-caveat {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+
 /* Learning path ----------------------------------------------------------- */
 .path-card {
   background: var(--surface);

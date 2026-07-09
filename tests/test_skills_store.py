@@ -114,3 +114,112 @@ def test_log_usage_inserts_row(isolated_store):
         ("example-skill", "listed"),
         ("example-skill", "fetched"),
     ]
+
+
+def test_init_db_creates_library_snapshots_table(isolated_store):
+    skills_store.init_db()
+
+    with sqlite3.connect(skills_store.DB_PATH) as conn:
+        tables = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='library_snapshots'"
+        ).fetchall()
+    assert tables == [("library_snapshots",)]
+
+
+def test_log_usage_stores_chars_and_tokens_est(isolated_store):
+    skills_store.init_db()
+
+    skills_store.log_usage("example-skill", "fetched", chars=400, tokens_est=100)
+
+    with sqlite3.connect(skills_store.DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT chars, tokens_est FROM skill_usage WHERE skill_name = 'example-skill'"
+        ).fetchone()
+    assert row == (400, 100)
+
+
+def test_migration_is_additive_and_preserves_old_rows(isolated_store):
+    """Simulates a pre-Session-6 database (skill_usage with no size columns,
+    holding a real historical row) and confirms init_db() adds the columns
+    without touching that row."""
+    _, db_path = isolated_store
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE skill_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                skill_name TEXT NOT NULL,
+                action TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO skill_usage (skill_name, action, created_at) "
+            "VALUES ('historical-skill', 'fetched', '2020-01-01 00:00:00')"
+        )
+        conn.commit()
+
+    skills_store.init_db()
+
+    with sqlite3.connect(db_path) as conn:
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(skill_usage)")]
+        row = conn.execute(
+            "SELECT skill_name, action, chars, tokens_est FROM skill_usage"
+        ).fetchall()
+    assert "chars" in columns
+    assert "tokens_est" in columns
+    assert row == [("historical-skill", "fetched", None, None)]
+
+
+def test_init_db_is_idempotent_across_repeated_calls(isolated_store):
+    skills_store.init_db()
+    skills_store.init_db()
+    skills_store.init_db()
+
+    with sqlite3.connect(skills_store.DB_PATH) as conn:
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(skill_usage)")]
+    assert columns.count("chars") == 1
+    assert columns.count("tokens_est") == 1
+
+
+def test_measure_listing_sizes_one_skills_metadata(isolated_store):
+    skills_dir, _ = isolated_store
+    write_skill(skills_dir, "example-skill.md")
+    skill = skills_store.load_all_skills()[0]
+
+    chars, tokens_est = skills_store.measure_listing(skill)
+
+    assert chars > 0
+    assert tokens_est == chars // 4
+
+
+def test_record_library_snapshot_dedups_when_unchanged(isolated_store):
+    skills_dir, _ = isolated_store
+    write_skill(skills_dir, "a.md", name="skill-a")
+    skills_store.init_db()
+
+    skills_store.record_library_snapshot()
+    skills_store.record_library_snapshot()
+    skills_store.record_library_snapshot()
+
+    with sqlite3.connect(skills_store.DB_PATH) as conn:
+        count = conn.execute("SELECT COUNT(*) FROM library_snapshots").fetchone()[0]
+    assert count == 1
+
+
+def test_record_library_snapshot_inserts_new_row_when_library_changes(isolated_store):
+    skills_dir, _ = isolated_store
+    write_skill(skills_dir, "a.md", name="skill-a")
+    skills_store.init_db()
+    skills_store.record_library_snapshot()
+
+    write_skill(skills_dir, "b.md", name="skill-b")
+    skills_store.record_library_snapshot()
+
+    with sqlite3.connect(skills_store.DB_PATH) as conn:
+        snapshots = conn.execute(
+            "SELECT total_skills FROM library_snapshots ORDER BY id"
+        ).fetchall()
+    assert snapshots == [(1,), (2,)]

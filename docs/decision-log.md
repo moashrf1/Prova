@@ -4,6 +4,73 @@ Authorship and reasoning record for the AI Enablement System build, per the
 "full authorship evidence from commit #1" guardrail. One entry per meaningful
 decision, newest first.
 
+## 2026-07-09 — Session 6: derive tokens_est from summed chars, not summed per-row estimates
+
+**Context:** found while hand-verifying Phase 2's checkpoint math, not by
+inspection. `library_baseline()` computes `tokens_est` once, from the
+snapshot's total chars (`estimate_tokens(total_chars)`). The first draft
+of `_content_tokens_in_range`/`_content_tokens_cumulative` instead summed
+the `tokens_est` column across rows -- each of which had already been
+individually floor-divided at write time. On real seeded data this
+produced `actual_tokens_est = 527` one way and the value implied by
+`actual_chars // 4` was `529` -- a small but real drift from summing
+already-floored per-row values instead of flooring the total once.
+
+**Decision:** both aggregate functions now sum `chars` only, then call
+`token_metrics.estimate_tokens()` once on that total -- exactly mirroring
+how the baseline is computed. Per-row `tokens_est` is still stored (it's
+useful for per-row inspection and is what the build doc asked for), but
+no aggregate calculation sums that column anymore; every total derives
+fresh from summed chars.
+
+**Why this got caught:** the checkpoint asked to hand-verify the saving
+math against seeded data, not just confirm the tool returns *a* number.
+Computing the expected saving independently and comparing surfaced the
+mismatch immediately. This is the same "trust but verify with a computed
+expectation" pattern used throughout this build's checkpoints.
+
+## 2026-07-09 — Session 6: "context content tokens (estimated)," not "API tokens billed"
+
+**Context:** the project's headline promise is token savings via
+progressive disclosure, and the proposal needs a number. The MCP server
+can't see the client's actual billed API token usage (that lives in the
+Claude client/API layer, outside this process) -- but it can measure
+exactly the thing progressive disclosure changes: how much content it
+serves.
+
+**Decision:** measure and label the metric honestly as "context content
+tokens (estimated)" -- the size of `list_skills` output plus only the
+skill bodies actually fetched, versus the size of the whole library as
+the counterfactual baseline. Never call this "API tokens billed."
+
+**Why this matters more than it might seem:** an inflated or
+mislabeled number is the fastest way to lose credibility in a proposal
+that's supposed to demonstrate rigor. A smaller, honestly-scoped, clearly
+-labeled number that's exactly true beats a bigger, vaguer one that
+invites a "wait, is that actually what gets billed?" question in the
+room where it matters.
+
+## 2026-07-09 — Session 6: chars/4 heuristic, one shared helper, raw chars always stored
+
+**Context:** need a token estimate without bundling a real tokenizer
+dependency.
+
+**Decision:** `tokens_est = chars // 4` (a standard rough heuristic for
+English text), implemented in exactly one place (`token_metrics.py`) that
+every call site routes through. Both `chars` and `tokens_est` are stored
+everywhere this is used (`skill_usage` columns, `library_snapshots`
+columns) -- not just the estimate -- so the raw character counts survive
+if the heuristic is ever swapped for a real tokenizer later; nothing
+downstream needs to be recomputed from scratch, only re-derived from
+`chars`.
+
+**Rejected alternative:** bundling a real tokenizer (e.g. `tiktoken`).
+Rejected for now: it's an extra dependency for marginal accuracy gain on
+a *comparative* metric, where both the actual and baseline sides use the
+identical heuristic -- the saving percentage is roughly heuristic-
+invariant even if the absolute numbers would shift slightly with a real
+tokenizer. Swappable later by changing `token_metrics.py` alone.
+
 ## 2026-07-09 — Session 5: orchestration — three peer subagents, not a code orchestrator
 
 **Context:** with all six MCP tools built (Sessions 1-3), the recurring

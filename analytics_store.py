@@ -25,6 +25,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import skills_store
+import token_metrics
 
 DB_PATH = Path(__file__).parent / "data" / "enablement.db"
 
@@ -154,6 +155,7 @@ def compute_recap(period: str, now: datetime | None = None) -> dict:
     decisions = decisions_in_range(start, end)
     fetched_skills = skills_fetched_in_range(start, end)
     projects_touched = sorted({s["project"] for s in sessions})
+    token_report = compute_token_report(period, now)
 
     return {
         "period": period,
@@ -169,6 +171,13 @@ def compute_recap(period: str, now: datetime | None = None) -> dict:
         "decisions": decisions,
         "skills_fetched_count": len(fetched_skills),
         "skills_fetched": fetched_skills,
+        "token_saving": {
+            "actual_tokens_est": token_report["actual_tokens_est"],
+            "baseline_tokens_est": token_report["baseline_tokens_est"],
+            "saving_tokens_est": token_report["saving_tokens_est"],
+            "saving_pct": token_report["saving_pct"],
+            "label": token_report["label"],
+        },
         "suggested_framing": (
             f"Summarize the {period} recap: {len(sessions)} session(s) across "
             f"{len(projects_touched)} project(s), {len(worklog)} worklog "
@@ -299,3 +308,98 @@ def skill_usage_counts() -> list[dict]:
         }
         for skill in skills_store.load_all_skills()
     ]
+
+
+def _content_tokens_in_range(start: str, end: str) -> dict:
+    """Actual content served: every 'listed' row's metadata size plus every
+    'fetched' row's body size (NULL sizes -- pre-instrumentation history,
+    or a not-found fetch with no body -- are excluded by SUM, not treated
+    as zero).
+
+    tokens_est is derived from the summed chars (estimate_tokens once on
+    the total), not by summing each row's already-stored tokens_est --
+    summing individually floor-divided per-row estimates can drift a few
+    tokens from flooring the total once, and the baseline side (see
+    library_baseline) is computed the same single-floor way. Both sides
+    of the saving comparison must use the identical rule or the "saving"
+    number stops being exactly defensible.
+    """
+    with db_connection() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(chars), 0) "
+            "FROM skill_usage WHERE created_at BETWEEN ? AND ?",
+            (start, end),
+        ).fetchone()
+    chars = row[0]
+    return {"chars": chars, "tokens_est": token_metrics.estimate_tokens(chars)}
+
+
+def _content_tokens_cumulative() -> dict:
+    with db_connection() as conn:
+        row = conn.execute("SELECT COALESCE(SUM(chars), 0) FROM skill_usage").fetchone()
+    chars = row[0]
+    return {"chars": chars, "tokens_est": token_metrics.estimate_tokens(chars)}
+
+
+def library_baseline() -> dict | None:
+    """Most recent library snapshot: the baseline "as if the whole library
+    had been loaded into context up front." None if the server has never
+    started (no snapshot taken yet)."""
+    with db_connection() as conn:
+        row = conn.execute(
+            "SELECT total_skills, total_chars, total_tokens_est, created_at "
+            "FROM library_snapshots ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "total_skills": row[0],
+        "chars": row[1],
+        "tokens_est": row[2],
+        "snapshot_at": row[3],
+    }
+
+
+def compute_token_report(period: str | None = None, now: datetime | None = None) -> dict:
+    """Actual content served vs. the whole-library baseline, for a window
+    (weekly/monthly, matching Session 3's rolling windows) or cumulative
+    (period=None, no date filter at all).
+
+    Labeled "context content tokens (estimated)" throughout -- this is the
+    size of content this server served, not client-billed API tokens,
+    which aren't visible from here. See docs/decision-log.md.
+    """
+    if period is None:
+        range_start, range_end = None, None
+        actual = _content_tokens_cumulative()
+    else:
+        range_start, range_end = period_bounds(period, now)
+        actual = _content_tokens_in_range(range_start, range_end)
+
+    baseline = library_baseline()
+    if baseline is None:
+        baseline_tokens_est = None
+        saving_tokens_est = None
+        saving_pct = None
+    else:
+        baseline_tokens_est = baseline["tokens_est"]
+        saving_tokens_est = baseline_tokens_est - actual["tokens_est"]
+        saving_pct = (
+            round(saving_tokens_est / baseline_tokens_est * 100, 1)
+            if baseline_tokens_est
+            else None
+        )
+
+    return {
+        "period": period,
+        "range_start": range_start,
+        "range_end": range_end,
+        "actual_chars": actual["chars"],
+        "actual_tokens_est": actual["tokens_est"],
+        "baseline_chars": baseline["chars"] if baseline else None,
+        "baseline_tokens_est": baseline_tokens_est,
+        "baseline_snapshot_at": baseline["snapshot_at"] if baseline else None,
+        "saving_tokens_est": saving_tokens_est,
+        "saving_pct": saving_pct,
+        "label": "context content tokens (estimated), not client-billed API tokens",
+    }

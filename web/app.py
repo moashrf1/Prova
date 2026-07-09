@@ -60,4 +60,14 @@ def get_skills():
     return _run_readonly(analytics_store.skill_usage_counts)
 
 
+@app.get("/api/token-report")
+def get_token_report(period: str | None = None):
+    if period is not None and period not in analytics_store.PERIOD_WINDOWS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"period must be one of {list(analytics_store.PERIOD_WINDOWS)}, or omitted for cumulative",
+        )
+    return _run_readonly(analytics_store.compute_token_report, period)
+
+
 app.mount("/", StaticFiles(directory=str(PROJECT_ROOT / "static"), html=True), name="static")

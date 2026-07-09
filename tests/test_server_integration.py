@@ -111,3 +111,35 @@ async def test_generate_recap_and_learning_stats_over_stdio():
             stats_data = json.loads(stats.content[0].text)
             assert stats_data["path_skill_total"] == 3
             assert 0 <= stats_data["path_skill_fetched_count"] <= 3
+
+
+@pytest.mark.asyncio
+async def test_token_report_over_stdio_and_recap_agreement():
+    """Same no-Inspector rationale as above. Server startup calls
+    record_library_snapshot(), so a baseline exists by the time any tool
+    call happens -- confirms token_report and generate_recap's
+    token_saving block report the identical numbers for the same period,
+    which is the Phase 3 checkpoint (dashboard/API/tool all agreeing)."""
+    params = StdioServerParameters(
+        command="python", args=["server.py"], cwd=str(PROJECT_ROOT)
+    )
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            await session.call_tool("list_skills", {})
+
+            report = await session.call_tool("token_report", {"period": "weekly"})
+            report_data = json.loads(report.content[0].text)
+            assert report_data["baseline_tokens_est"] is not None
+            assert report_data["actual_tokens_est"] >= 0
+            assert "context content tokens" in report_data["label"]
+
+            recap = await session.call_tool("generate_recap", {"period": "weekly"})
+            recap_data = json.loads(recap.content[0].text)
+            assert recap_data["token_saving"]["baseline_tokens_est"] == report_data["baseline_tokens_est"]
+            assert recap_data["token_saving"]["saving_tokens_est"] == report_data["saving_tokens_est"]
+
+            cumulative = await session.call_tool("token_report", {})
+            cumulative_data = json.loads(cumulative.content[0].text)
+            assert cumulative_data["period"] is None

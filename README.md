@@ -5,25 +5,33 @@ progressive disclosure (Session 1), automatic worklog capture (Session 2) —
 projects, sessions, decisions, and end-of-session summaries, with timing
 always derived, never entered by hand — recaps plus learning analytics that
 read that accumulated data back (Session 3), a read-only web dashboard that
-visualizes all of it (Session 4), and three specialized Claude Code
-subagents that compose those tools into recurring workflows (Session 5). See
-`docs/build-plan-session-1.md` through `-session-5.md` for full context, and
-`docs/decision-log.md` for the reasoning behind key choices.
+visualizes all of it (Session 4), three specialized Claude Code subagents
+that compose those tools into recurring workflows (Session 5), and automatic
+token-savings measurement so normal daily use accumulates proposal evidence
+with zero extra effort (Session 6). See `docs/build-plan-session-1.md`
+through `-session-6.md` for full context, and `docs/decision-log.md` for the
+reasoning behind key choices.
 
 ## What's here
 
-- `server.py` — the MCP server (FastMCP, from the `mcp` SDK). Exposes six
+- `server.py` — the MCP server (FastMCP, from the `mcp` SDK). Exposes seven
   tools: `list_skills`, `get_skill`, `log_work`, `log_decision`,
-  `generate_recap`, `learning_stats`. **The only write path** onto the data.
-- `skills_store.py` — reads skill markdown files from `skills/` and logs
-  usage to SQLite.
+  `generate_recap`, `learning_stats`, `token_report`. **The only write path**
+  onto the data.
+- `token_metrics.py` — the single shared token-estimation heuristic
+  (`chars // 4`) every call site routes through.
+- `skills_store.py` — reads skill markdown files from `skills/`, logs usage
+  (with size in chars/tokens_est) to SQLite, and snapshots the library's
+  total size on server start (only when it's changed since the last
+  snapshot).
 - `work_store.py` — projects/sessions/worklog/decisions: creation, lookup,
   and the session open/close logic behind `log_work` and `log_decision`.
 - `analytics_store.py` — read-only queries over the accumulated data
   (every connection opens SQLite in `mode=ro`): temporal aggregates for
-  `generate_recap`, cumulative/path-aware stats for `learning_stats`, plus
-  per-project rollups, recent decisions, and skill usage counts for the
-  dashboard. Nothing here writes, and now nothing here *can*.
+  `generate_recap`, cumulative/path-aware stats for `learning_stats`,
+  per-project rollups, recent decisions, skill usage counts, and the token
+  savings math for `token_report`. Nothing here writes, and now nothing here
+  *can*.
 - `web/app.py` — a FastAPI app exposing the same `analytics_store` queries
   as JSON over HTTP, and serving `static/` (the dashboard). A second,
   read-only entry point onto `data/enablement.db` — it never writes.
@@ -35,9 +43,10 @@ subagents that compose those tools into recurring workflows (Session 5). See
 - `.claude/agents/` — three subagents (`worklog-agent`, `skills-agent`,
   `analytics-agent`) that compose the MCP tools above into recurring
   workflows. See "Subagents" below.
-- `data/enablement.db` — SQLite database: `skill_usage`, `projects`,
-  `sessions`, `worklog`, `decisions` (created automatically on first run of
-  the MCP server). Not checked into git.
+- `data/enablement.db` — SQLite database: `skill_usage` (now with `chars`/
+  `tokens_est` columns), `projects`, `sessions`, `worklog`, `decisions`,
+  `library_snapshots` (created automatically on first run of the MCP
+  server). Not checked into git.
 - `docs/` — the build plans and the decision log.
 
 ## Setup
@@ -87,15 +96,18 @@ All under `/api/`, all `GET`, all read-only, all reusing `analytics_store.py`:
 | `/api/projects` | Per-project session count, total time, last activity |
 | `/api/decisions?limit=N` | Most recent N decisions (default 20) |
 | `/api/skills` | Every skill with its all-time fetch count (0 if never fetched) |
+| `/api/token-report?period=weekly\|monthly` | Same numbers as the `token_report` MCP tool (omit `period` for cumulative) |
 
 ### Dashboard sections
 
-Recap stat cards (with the weekly/monthly toggle) → activity charts (time
-per project, skill fetch counts) → learning-path progress ("N of M
-`product-manager`-track skills fetched", with fetched/remaining skills as
-chips) → a projects table → a recent-decisions log (the visible
-authorship/IP trail). Every section handles the empty-database case
-(sensible "nothing yet" messages, no errors) and both light and dark mode.
+A prominent **token savings** card (headline percentage + a weekly/monthly/
+all-time comparison chart) right at the top → recap stat cards (with the
+weekly/monthly toggle) → activity charts (time per project, skill fetch
+counts) → learning-path progress ("N of M `product-manager`-track skills
+fetched", with fetched/remaining skills as chips) → a projects table → a
+recent-decisions log (the visible authorship/IP trail). Every section
+handles the empty-database case (sensible "nothing yet" messages, no
+errors) and both light and dark mode.
 
 ## Tools
 
@@ -153,6 +165,42 @@ stretch of work with exactly one worklog entry.
 `learning_stats` answers "how far have I come overall" (everything, ever).
 The same accumulated tables feed both — the difference is entirely in the
 date filter, not the data.
+
+- **`token_report(period=None)`** — `period` is `"weekly"`, `"monthly"`, or
+  omitted for all-time cumulative. Returns the actual content served
+  (everything `list_skills`/`get_skill` sent out in that window) against the
+  baseline (the whole library's size, from the most recent snapshot), plus
+  the estimated saving in absolute tokens and percent. `generate_recap` also
+  includes this as a `token_saving` block, computed for the same period, so
+  a weekly recap naturally carries the number.
+
+### What the token number actually measures — and what it doesn't
+
+This is deliberately **not** "API tokens billed." The MCP server can't see
+what the Claude client actually gets billed for — that happens in the
+client/API layer, outside this process. What it *can* measure exactly is
+the size of the content it serves, which is precisely the thing progressive
+disclosure changes. So:
+
+- **Actual**: the size of every `list_skills` response plus every skill
+  body actually `get_skill`-fetched, in a window (or all-time).
+- **Baseline**: the size of the *whole library*, as if it had all been
+  loaded into context up front (the counterfactual the system replaces),
+  taken from the most recent `library_snapshots` row.
+- **Saving**: baseline − actual, in both absolute estimated tokens and
+  percent.
+
+Labeled everywhere as **"context content tokens (estimated)"** — read it as
+"how much smaller the content this server sent was, versus sending
+everything," not as a claim about your actual API bill. The estimate itself
+is `tokens_est = chars // 4` (a standard rough heuristic for English text),
+computed in one place (`token_metrics.py`) so it can be swapped for a real
+tokenizer later without touching any call site — both `chars` and
+`tokens_est` are stored everywhere, so the raw character counts survive
+that kind of change. A real tokenizer dependency was deliberately skipped
+for now: extra dependency, marginal accuracy gain on a metric that's
+inherently *comparative* (both sides of the saving calculation use the
+identical heuristic).
 
 ## Subagents
 
