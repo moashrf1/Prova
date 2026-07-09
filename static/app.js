@@ -1,8 +1,19 @@
 (() => {
   "use strict";
 
+  // The only career path currently defined in skills/*.md frontmatter.
+  // A path picker would be over-engineering for a single-path personal demo;
+  // add one if/when a second path exists.
+  const LEARNING_PATH = "product-manager";
+
   const statGrid = document.getElementById("stat-grid");
   const periodButtons = document.querySelectorAll(".period-toggle button");
+  const pathContainer = document.getElementById("path-container");
+  const projectsContainer = document.getElementById("projects-container");
+  const decisionsContainer = document.getElementById("decisions-container");
+
+  const style = getComputedStyle(document.documentElement);
+  const cssVar = (name) => style.getPropertyValue(name).trim();
 
   function formatDuration(totalSeconds) {
     const totalMinutes = Math.round(totalSeconds / 60);
@@ -57,5 +68,186 @@
     });
   });
 
+  async function fetchJson(url) {
+    const response = await fetch(url);
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.detail || `Request failed (${response.status})`);
+    }
+    return response.json();
+  }
+
+  // Shared bar-chart styling: single accent hue per chart (each chart is one
+  // series, so no categorical palette or legend is needed -- the card title
+  // already names the series), recessive gridlines, muted axis text, the
+  // library's default hover tooltip.
+  function barChartOptions() {
+    const gridColor = cssVar("--border");
+    const tickColor = cssVar("--ink-muted");
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: tickColor } },
+        y: {
+          beginAtZero: true,
+          grid: { color: gridColor },
+          ticks: { color: tickColor, precision: 0 },
+        },
+      },
+    };
+  }
+
+  function renderBarChart(canvasId, labels, data, valueLabel) {
+    const canvas = document.getElementById(canvasId);
+    new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: valueLabel,
+            data,
+            backgroundColor: cssVar("--accent"),
+            borderRadius: 4,
+            maxBarThickness: 48,
+          },
+        ],
+      },
+      options: barChartOptions(),
+    });
+  }
+
+  async function loadCharts() {
+    try {
+      const projects = await fetchJson("/api/projects");
+      const withTime = projects.filter((p) => p.total_duration_seconds > 0);
+      if (withTime.length === 0) {
+        document.getElementById("chart-time-per-project").closest(".chart-card").innerHTML =
+          '<h3>Time per project</h3><div class="empty-state">No completed sessions yet.</div>';
+      } else {
+        renderBarChart(
+          "chart-time-per-project",
+          withTime.map((p) => p.name),
+          withTime.map((p) => Math.round((p.total_duration_seconds / 3600) * 10) / 10),
+          "Hours logged"
+        );
+      }
+    } catch (err) {
+      renderError(document.getElementById("chart-grid"), err.message);
+    }
+
+    try {
+      const skills = await fetchJson("/api/skills");
+      const used = skills.filter((s) => s.fetch_count > 0);
+      if (used.length === 0) {
+        document.getElementById("chart-skill-usage").closest(".chart-card").innerHTML =
+          '<h3>Skill fetch counts</h3><div class="empty-state">No skills fetched yet.</div>';
+      } else {
+        renderBarChart(
+          "chart-skill-usage",
+          used.map((s) => s.title),
+          used.map((s) => s.fetch_count),
+          "Times fetched"
+        );
+      }
+    } catch (err) {
+      renderError(document.getElementById("chart-grid"), err.message);
+    }
+  }
+
+  async function loadLearningPath() {
+    try {
+      const stats = await fetchJson(`/api/learning-stats?path=${encodeURIComponent(LEARNING_PATH)}`);
+      if (!stats.path_skill_total) {
+        pathContainer.innerHTML = `<div class="empty-state">No skills tagged for the "${LEARNING_PATH}" path yet.</div>`;
+        return;
+      }
+      const pct = Math.round((stats.path_skill_fetched_count / stats.path_skill_total) * 100);
+      const chips = [
+        ...stats.path_skills_fetched.map((name) => `<span class="skill-chip is-fetched">${name}</span>`),
+        ...stats.path_skills_remaining.map((name) => `<span class="skill-chip">${name}</span>`),
+      ].join("");
+      pathContainer.innerHTML = `
+        <div class="path-card">
+          <div class="path-summary">
+            <span class="fraction">${stats.path_skill_fetched_count} of ${stats.path_skill_total}</span>
+            <span class="path-name">${LEARNING_PATH} track skills fetched</span>
+          </div>
+          <div class="path-bar"><div class="path-bar-fill" style="width: ${pct}%"></div></div>
+          <div class="skill-chip-list">${chips}</div>
+        </div>`;
+    } catch (err) {
+      renderError(pathContainer, err.message);
+    }
+  }
+
+  async function loadProjects() {
+    try {
+      const projects = await fetchJson("/api/projects");
+      if (projects.length === 0) {
+        projectsContainer.innerHTML = '<div class="empty-state">No projects logged yet.</div>';
+        return;
+      }
+      const rows = projects
+        .map(
+          (p) => `
+          <tr>
+            <td>${p.name}</td>
+            <td>${p.status}</td>
+            <td class="num">${p.session_count}</td>
+            <td class="num">${formatDuration(p.total_duration_seconds)}</td>
+            <td class="num">${p.last_activity ?? "&ndash;"}</td>
+          </tr>`
+        )
+        .join("");
+      projectsContainer.innerHTML = `
+        <div class="table-wrap">
+          <table class="projects">
+            <thead>
+              <tr>
+                <th>Project</th><th>Status</th>
+                <th class="num">Sessions</th><th class="num">Time logged</th><th class="num">Last activity</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    } catch (err) {
+      renderError(projectsContainer, err.message);
+    }
+  }
+
+  async function loadDecisions() {
+    try {
+      const decisions = await fetchJson("/api/decisions?limit=10");
+      if (decisions.length === 0) {
+        decisionsContainer.innerHTML = '<div class="empty-state">No decisions logged yet.</div>';
+        return;
+      }
+      const items = decisions
+        .map(
+          (d) => `
+          <div class="decision-item">
+            <div class="decision-header">
+              <span class="decision-title">${d.decision}</span>
+              <span class="decision-meta">${d.created_at} &middot; ${d.project}</span>
+            </div>
+            <div class="decision-reasoning">${d.reasoning}</div>
+            ${d.rejected_alternative ? `<div class="decision-rejected"><strong>Rejected:</strong> ${d.rejected_alternative}</div>` : ""}
+          </div>`
+        )
+        .join("");
+      decisionsContainer.innerHTML = `<div class="decision-list">${items}</div>`;
+    } catch (err) {
+      renderError(decisionsContainer, err.message);
+    }
+  }
+
   loadRecap("weekly");
+  loadCharts();
+  loadLearningPath();
+  loadProjects();
+  loadDecisions();
 })();

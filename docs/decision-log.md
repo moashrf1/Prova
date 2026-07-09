@@ -4,6 +4,44 @@ Authorship and reasoning record for the AI Enablement System build, per the
 "full authorship evidence from commit #1" guardrail. One entry per meaningful
 decision, newest first.
 
+## 2026-07-09 — Session 4: vendored Chart.js instead of linking the CDN
+
+**Context:** the build doc's Phase 4 instructions say "Add Chart.js (via
+CDN)." The build environment's outbound network policy blocks the
+jsdelivr CDN this session was run in, so a `<script src="https://cdn...">`
+tag couldn't be verified working here.
+
+**Decision:** downloaded `chart.js@4` via npm (npm's registry is
+allow-listed) and committed the UMD build to `static/vendor/chart.umd.min.js`
+(~208KB, MIT licensed), loaded via a plain `<script>` tag with no build
+step. This is a deliberate deviation from "via CDN," not a workaround
+forced by this one sandbox: a locally-hosted personal dashboard that's
+supposed to run offline on personal hardware shouldn't need internet
+access at runtime just to draw a bar chart. If bandwidth/repo-size becomes
+a concern later, switching the one `<script src="...">` line back to a CDN
+url is a one-line change.
+
+**Verified:** charts render correctly against seeded data over real HTTP,
+confirmed with Playwright screenshots (bar heights match the
+`/api/projects` and `/api/skills` numbers exactly) and zero console errors
+(aside from the browser's own unrelated `favicon.ico` 404).
+
+## 2026-07-09 — Session 4: single accent hue per chart, no legend, no color validator run
+
+**Context:** the dataviz skill's method requires assigning categorical
+hues in fixed order and running the CVD-safety validator for any
+categorical palette, plus a legend whenever 2+ series are shown.
+
+**Decision:** both dashboard charts (time per project, skill fetch counts)
+are single-series bar charts -- the categories live on the x-axis as
+labels, not as competing series distinguished by color. Per the skill's
+own rule ("a single series needs no legend box -- the title names it"),
+one accent hue for all bars is correct here, not a shortcut around the
+categorical-palette rules; those rules apply once color itself is doing
+the job of distinguishing multiple series, which isn't the case here. No
+validator run needed since there's no multi-hue categorical palette to
+validate.
+
 ## 2026-07-09 — Session 4: system font stack instead of an embedded webfont
 
 **Context:** the environment's design guidance (calibrated for claude.ai

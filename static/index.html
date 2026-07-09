@@ -32,32 +32,40 @@
     <section aria-labelledby="charts-heading">
       <h2 id="charts-heading">Activity</h2>
       <div class="chart-grid" id="chart-grid">
-        <div class="empty-state">Charts render in Phase 4.</div>
+        <div class="chart-card">
+          <h3>Time per project</h3>
+          <canvas id="chart-time-per-project" role="img" aria-label="Bar chart of total time logged per project"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Skill fetch counts</h3>
+          <canvas id="chart-skill-usage" role="img" aria-label="Bar chart of how many times each skill has been fetched"></canvas>
+        </div>
       </div>
     </section>
 
     <section aria-labelledby="path-heading">
       <h2 id="path-heading">Learning path</h2>
       <div id="path-container">
-        <div class="empty-state">Learning-path progress renders in Phase 4.</div>
+        <div class="empty-state">Loading&hellip;</div>
       </div>
     </section>
 
     <section aria-labelledby="projects-heading">
       <h2 id="projects-heading">Projects</h2>
       <div id="projects-container">
-        <div class="empty-state">Project rollups render in Phase 4.</div>
+        <div class="empty-state">Loading&hellip;</div>
       </div>
     </section>
 
     <section aria-labelledby="decisions-heading">
       <h2 id="decisions-heading">Recent decisions</h2>
       <div id="decisions-container">
-        <div class="empty-state">The decisions log renders in Phase 4.</div>
+        <div class="empty-state">Loading&hellip;</div>
       </div>
     </section>
   </div>
 
+  <script src="/vendor/chart.umd.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
