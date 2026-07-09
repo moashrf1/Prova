@@ -4,6 +4,44 @@ Authorship and reasoning record for the AI Enablement System build, per the
 "full authorship evidence from commit #1" guardrail. One entry per meaningful
 decision, newest first.
 
+## 2026-07-09 — Session 5: subagent format verified; one delta from the build doc
+
+**Context:** Phase 1 of the Session 5 doc asked me to confirm the current
+`.claude/agents/` format against the official docs before building anything,
+since the doc itself warned the format could have drifted.
+
+**Method:** fetched `https://code.claude.com/docs/en/sub-agents.md` directly
+(not a secondhand summary) and cross-checked a subagent's own report against
+it, since that report made a claim that contradicted this session's own
+system-level description of subagent behavior.
+
+**Findings, confirmed accurate:**
+- Files live in `.claude/agents/` (project-scoped, checked into git) or
+  `~/.claude/agents/` (user-scoped, all projects).
+- Only `name` and `description` are required. `tools` is a comma-separated
+  allowlist (e.g. `Read, Grep, Bash`); **omitting it inherits every tool
+  from the parent session** -- the opposite of "no tools," so an explicit
+  allowlist is mandatory to get the least-privilege design in §1.3 of the
+  build doc. `disallowedTools` (a denylist) also exists and is real.
+- `model` defaults to `inherit` (same model as the main conversation) if
+  omitted.
+- Individual MCP tools are referenced in `tools`/`disallowedTools` as
+  `mcp__<server>__<tool>` (e.g. `mcp__ai-enablement__log_work`); `mcp__<server>`
+  or `mcp__<server>__*` grants/denies every tool from that server at once.
+
+**One real delta from the build doc:** "subagents are one level deep and
+cannot spawn other subagents" is **no longer accurate** as a platform-wide
+constraint -- nested subagent spawning has been supported since Claude Code
+v2.1.172 (depth capped at 5, not configurable). The build doc's own
+verification request correctly anticipated that this could have changed.
+
+**Why this doesn't change the design:** none of the three planned agents
+(Skills / Worklog / Analytics) need to spawn subagents of their own --
+each is a leaf specialist. Omitting the `Agent` tool from each agent's
+`tools` allowlist blocks spawning for that agent regardless of what the
+platform allows elsewhere, so the doc's one-orchestrator/three-peers shape
+holds without relying on the (now-inaccurate) hard platform limit.
+
 ## 2026-07-09 — Session 4: vendored Chart.js instead of linking the CDN
 
 **Context:** the build doc's Phase 4 instructions say "Add Chart.js (via
