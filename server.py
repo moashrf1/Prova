@@ -67,6 +67,17 @@ def log_decision(
 
 
 @mcp.tool()
+def learning_stats(path: str | None = None) -> dict:
+    """Cumulative, all-time progress: total skills fetched, decisions, sessions.
+
+    Pass a career path (e.g. "product-manager") to also get fetched-vs-total
+    progress for that path's skills, read from the skill frontmatter's
+    `path` field.
+    """
+    return analytics_store.compute_learning_stats(path)
+
+
+@mcp.tool()
 def generate_recap(period: str) -> dict:
     """Temporal summary of recent work ("weekly" = last 7 days, "monthly" = last 30 days).
 
