@@ -1,5 +1,63 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>AI Enablement Dashboard</title></head>
-<body>Dashboard coming in Phase 3.</body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Enablement Dashboard</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <div>
+        <h1>AI Enablement Dashboard</h1>
+        <div class="subtitle">Personal skills, worklog, and learning progress &mdash; read-only</div>
+      </div>
+      <div class="period-toggle" role="group" aria-label="Recap period">
+        <button type="button" data-period="weekly" aria-pressed="true">Weekly</button>
+        <button type="button" data-period="monthly" aria-pressed="false">Monthly</button>
+      </div>
+    </header>
+
+    <section aria-labelledby="recap-heading">
+      <h2 id="recap-heading">Recap</h2>
+      <div class="stat-grid" id="stat-grid">
+        <div class="stat-card is-loading"><div class="value num">&ndash;</div><div class="label">Sessions</div></div>
+        <div class="stat-card is-loading"><div class="value num">&ndash;</div><div class="label">Time logged</div></div>
+        <div class="stat-card is-loading"><div class="value num">&ndash;</div><div class="label">Decisions</div></div>
+        <div class="stat-card is-loading"><div class="value num">&ndash;</div><div class="label">Skills fetched</div></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="charts-heading">
+      <h2 id="charts-heading">Activity</h2>
+      <div class="chart-grid" id="chart-grid">
+        <div class="empty-state">Charts render in Phase 4.</div>
+      </div>
+    </section>
+
+    <section aria-labelledby="path-heading">
+      <h2 id="path-heading">Learning path</h2>
+      <div id="path-container">
+        <div class="empty-state">Learning-path progress renders in Phase 4.</div>
+      </div>
+    </section>
+
+    <section aria-labelledby="projects-heading">
+      <h2 id="projects-heading">Projects</h2>
+      <div id="projects-container">
+        <div class="empty-state">Project rollups render in Phase 4.</div>
+      </div>
+    </section>
+
+    <section aria-labelledby="decisions-heading">
+      <h2 id="decisions-heading">Recent decisions</h2>
+      <div id="decisions-container">
+        <div class="empty-state">The decisions log renders in Phase 4.</div>
+      </div>
+    </section>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
 </html>

@@ -4,6 +4,42 @@ Authorship and reasoning record for the AI Enablement System build, per the
 "full authorship evidence from commit #1" guardrail. One entry per meaningful
 decision, newest first.
 
+## 2026-07-09 — Session 4: system font stack instead of an embedded webfont
+
+**Context:** the environment's design guidance (calibrated for claude.ai
+Artifacts) says to inline a webfont as a `@font-face` data URI rather than
+link a CDN font, since Artifacts run under a CSP that blocks external
+font requests.
+
+**Decision:** this dashboard is not an Artifact -- it's a FastAPI app meant
+to run on personal hardware, offline-capable, with no build step. Neither
+constraint (the Artifact CSP, or the "embed so it always renders")
+actually applies the same way, and downloading/vendoring a font binary
+would add repo weight and a licensing question for no real gain. Used a
+deliberate system-font stack instead (sans throughout, with a monospace
+stack reserved for every number, on stat cards and throughout, for a
+consistent "engineering logbook" identity), styled with a real type scale,
+weight, and tracking so it doesn't read as an unstyled default. This is a
+calibration of the design skill's intent (considered typography, not an
+inherited default) to a context the skill wasn't specifically written for.
+
+## 2026-07-09 — Session 4: dashboard palette and layout
+
+**Context:** the build doc's explicit goal is "polished, not templated" --
+suitable for showing management, but the guidance also warns against
+over-designing a utilitarian page (no giant hero, no flashy decoration).
+
+**Decision:** single-page, no hero: a top bar (title + period toggle),
+then stacked sections (recap stat cards, charts, learning path, projects,
+decisions) that read top-to-bottom like a real report. Accent teal
+(`#1d6f72` light / `#4fbdc0` dark) used only for the active period toggle
+and, later, chart/progress fills -- everywhere else stays neutral ink and
+slate, so the one spot of color reads as deliberate rather than
+decorative. Chose this over the AI-cliche defaults called out in the
+design guidance (warm cream + terracotta, near-black + neon, purple-blue
+gradient hero) precisely because those are the clichés to avoid when nothing
+else pins the direction.
+
 ## 2026-07-09 — Session 4: hardened analytics_store.py's own connection to read-only, instead of a separate read-only layer in web/app.py
 
 **Context:** the build doc asked for the web layer to open SQLite read-only
