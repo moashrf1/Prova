@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Enablement Dashboard</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <div>
+        <h1>AI Enablement Dashboard</h1>
+        <div class="subtitle">Personal skills, worklog, and learning progress &mdash; read-only</div>
+      </div>
+      <div class="period-toggle" role="group" aria-label="Recap period">
+        <button type="button" data-period="weekly" aria-pressed="true">Weekly</button>
+        <button type="button" data-period="monthly" aria-pressed="false">Monthly</button>
+      </div>
+    </header>
+
+    <section aria-labelledby="recap-heading">
+      <h2 id="recap-heading">Recap</h2>
+      <div class="stat-grid" id="stat-grid">
+        <div class="stat-card is-loading"><div class="value num">&ndash;</div><div class="label">Sessions</div></div>
+        <div class="stat-card is-loading"><div class="value num">&ndash;</div><div class="label">Time logged</div></div>
+        <div class="stat-card is-loading"><div class="value num">&ndash;</div><div class="label">Decisions</div></div>
+        <div class="stat-card is-loading"><div class="value num">&ndash;</div><div class="label">Skills fetched</div></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="charts-heading">
+      <h2 id="charts-heading">Activity</h2>
+      <div class="chart-grid" id="chart-grid">
+        <div class="chart-card">
+          <h3>Time per project</h3>
+          <canvas id="chart-time-per-project" role="img" aria-label="Bar chart of total time logged per project"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Skill fetch counts</h3>
+          <canvas id="chart-skill-usage" role="img" aria-label="Bar chart of how many times each skill has been fetched"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="path-heading">
+      <h2 id="path-heading">Learning path</h2>
+      <div id="path-container">
+        <div class="empty-state">Loading&hellip;</div>
+      </div>
+    </section>
+
+    <section aria-labelledby="projects-heading">
+      <h2 id="projects-heading">Projects</h2>
+      <div id="projects-container">
+        <div class="empty-state">Loading&hellip;</div>
+      </div>
+    </section>
+
+    <section aria-labelledby="decisions-heading">
+      <h2 id="decisions-heading">Recent decisions</h2>
+      <div id="decisions-container">
+        <div class="empty-state">Loading&hellip;</div>
+      </div>
+    </section>
+  </div>
+
+  <script src="/vendor/chart.umd.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

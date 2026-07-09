@@ -1,5 +1,6 @@
 from mcp.server.fastmcp import FastMCP
 
+import analytics_store
 import skills_store
 import work_store
 
@@ -63,6 +64,28 @@ def log_decision(
         f"(project_id={result['project_id']}, session_id={result['session_id']}, "
         f"decision_id={result['decision_id']})."
     )
+
+
+@mcp.tool()
+def learning_stats(path: str | None = None) -> dict:
+    """Cumulative, all-time progress: total skills fetched, decisions, sessions.
+
+    Pass a career path (e.g. "product-manager") to also get fetched-vs-total
+    progress for that path's skills, read from the skill frontmatter's
+    `path` field.
+    """
+    return analytics_store.compute_learning_stats(path)
+
+
+@mcp.tool()
+def generate_recap(period: str) -> dict:
+    """Temporal summary of recent work ("weekly" = last 7 days, "monthly" = last 30 days).
+
+    Returns computed numbers plus the raw tasks/learnings/decisions text and
+    a suggested framing line -- the tool does not write prose itself; turn
+    this structured data into a short natural-language recap.
+    """
+    return analytics_store.compute_recap(period)
 
 
 if __name__ == "__main__":

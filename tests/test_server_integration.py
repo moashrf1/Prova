@@ -85,3 +85,29 @@ async def test_log_work_and_log_decision_over_stdio():
                 },
             )
             assert "Logged work" in work.content[0].text
+
+
+@pytest.mark.asyncio
+async def test_generate_recap_and_learning_stats_over_stdio():
+    """Same no-Inspector rationale as above. Runs against the real
+    data/enablement.db, which by this point in the suite has at least the
+    test-integration-project work logged by the test above -- just checks
+    the tools respond with well-formed, self-consistent data, not exact
+    counts (those are covered precisely by test_analytics_store.py's
+    isolated fixtures)."""
+    params = StdioServerParameters(
+        command="python", args=["server.py"], cwd=str(PROJECT_ROOT)
+    )
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            recap = await session.call_tool("generate_recap", {"period": "weekly"})
+            recap_data = json.loads(recap.content[0].text)
+            assert recap_data["session_count"] >= 1
+            assert "test-integration-project" in recap_data["projects_touched"]
+
+            stats = await session.call_tool("learning_stats", {"path": "product-manager"})
+            stats_data = json.loads(stats.content[0].text)
+            assert stats_data["path_skill_total"] == 3
+            assert 0 <= stats_data["path_skill_fetched_count"] <= 3

@@ -4,6 +4,142 @@ Authorship and reasoning record for the AI Enablement System build, per the
 "full authorship evidence from commit #1" guardrail. One entry per meaningful
 decision, newest first.
 
+## 2026-07-09 — Session 4: vendored Chart.js instead of linking the CDN
+
+**Context:** the build doc's Phase 4 instructions say "Add Chart.js (via
+CDN)." The build environment's outbound network policy blocks the
+jsdelivr CDN this session was run in, so a `<script src="https://cdn...">`
+tag couldn't be verified working here.
+
+**Decision:** downloaded `chart.js@4` via npm (npm's registry is
+allow-listed) and committed the UMD build to `static/vendor/chart.umd.min.js`
+(~208KB, MIT licensed), loaded via a plain `<script>` tag with no build
+step. This is a deliberate deviation from "via CDN," not a workaround
+forced by this one sandbox: a locally-hosted personal dashboard that's
+supposed to run offline on personal hardware shouldn't need internet
+access at runtime just to draw a bar chart. If bandwidth/repo-size becomes
+a concern later, switching the one `<script src="...">` line back to a CDN
+url is a one-line change.
+
+**Verified:** charts render correctly against seeded data over real HTTP,
+confirmed with Playwright screenshots (bar heights match the
+`/api/projects` and `/api/skills` numbers exactly) and zero console errors
+(aside from the browser's own unrelated `favicon.ico` 404).
+
+## 2026-07-09 — Session 4: single accent hue per chart, no legend, no color validator run
+
+**Context:** the dataviz skill's method requires assigning categorical
+hues in fixed order and running the CVD-safety validator for any
+categorical palette, plus a legend whenever 2+ series are shown.
+
+**Decision:** both dashboard charts (time per project, skill fetch counts)
+are single-series bar charts -- the categories live on the x-axis as
+labels, not as competing series distinguished by color. Per the skill's
+own rule ("a single series needs no legend box -- the title names it"),
+one accent hue for all bars is correct here, not a shortcut around the
+categorical-palette rules; those rules apply once color itself is doing
+the job of distinguishing multiple series, which isn't the case here. No
+validator run needed since there's no multi-hue categorical palette to
+validate.
+
+## 2026-07-09 — Session 4: system font stack instead of an embedded webfont
+
+**Context:** the environment's design guidance (calibrated for claude.ai
+Artifacts) says to inline a webfont as a `@font-face` data URI rather than
+link a CDN font, since Artifacts run under a CSP that blocks external
+font requests.
+
+**Decision:** this dashboard is not an Artifact -- it's a FastAPI app meant
+to run on personal hardware, offline-capable, with no build step. Neither
+constraint (the Artifact CSP, or the "embed so it always renders")
+actually applies the same way, and downloading/vendoring a font binary
+would add repo weight and a licensing question for no real gain. Used a
+deliberate system-font stack instead (sans throughout, with a monospace
+stack reserved for every number, on stat cards and throughout, for a
+consistent "engineering logbook" identity), styled with a real type scale,
+weight, and tracking so it doesn't read as an unstyled default. This is a
+calibration of the design skill's intent (considered typography, not an
+inherited default) to a context the skill wasn't specifically written for.
+
+## 2026-07-09 — Session 4: dashboard palette and layout
+
+**Context:** the build doc's explicit goal is "polished, not templated" --
+suitable for showing management, but the guidance also warns against
+over-designing a utilitarian page (no giant hero, no flashy decoration).
+
+**Decision:** single-page, no hero: a top bar (title + period toggle),
+then stacked sections (recap stat cards, charts, learning path, projects,
+decisions) that read top-to-bottom like a real report. Accent teal
+(`#1d6f72` light / `#4fbdc0` dark) used only for the active period toggle
+and, later, chart/progress fills -- everywhere else stays neutral ink and
+slate, so the one spot of color reads as deliberate rather than
+decorative. Chose this over the AI-cliche defaults called out in the
+design guidance (warm cream + terracotta, near-black + neon, purple-blue
+gradient hero) precisely because those are the clichés to avoid when nothing
+else pins the direction.
+
+## 2026-07-09 — Session 4: hardened analytics_store.py's own connection to read-only, instead of a separate read-only layer in web/app.py
+
+**Context:** the build doc asked for the web layer to open SQLite read-only
+(`mode=ro`) so a bug in the dashboard literally cannot write, while also
+insisting on reusing Session 3's query logic rather than duplicating it.
+Those two asks are in tension if the read-only connection lives only in
+`web/app.py`, since `analytics_store.py`'s functions each open their own
+connection internally.
+
+**Decision:** `analytics_store.py` already documented itself as read-only
+("nothing here writes") and, on inspection, every function is in fact a
+pure `SELECT`. So `db_connection()` inside `analytics_store.py` itself now
+opens with `mode=ro` (via `DB_PATH.as_uri() + "?mode=ro"`, `uri=True`),
+turning a documented convention into an enforced one. `web/app.py` then
+imports `analytics_store` directly and calls the exact same
+`compute_recap`/`compute_learning_stats` functions the MCP tools call --
+genuine reuse, not a parallel read-only wrapper. The read-only guarantee
+now covers the MCP tool path too, which is strictly stronger than the
+build doc asked for, at no cost (those tools were always read-only in
+practice).
+
+**Rejected alternative:** give `web/app.py` its own read-only connection
+and either duplicate the queries or thread a connection parameter through
+every `analytics_store` function. Rejected as unnecessary complexity once
+it was clear the module's connections could just be read-only everywhere.
+
+**Verified:** existing 27 Session 1-3 tests still pass unchanged against
+the now-read-only connection (they were always read-only in practice); a
+direct write attempt through `analytics_store.db_connection()` raises
+`sqlite3.OperationalError: attempt to write a readonly database`; and
+`/api/recap` served over real HTTP (uvicorn) returns output identical to
+calling `analytics_store.compute_recap` directly.
+
+## 2026-07-09 — Session 3: `monthly` is a rolling 30-day window, not a calendar month
+
+**Context:** `generate_recap(period)` needed a concrete definition of
+"monthly" before the query helpers could be written.
+
+**Decision:** rolling 30 days ending now, exactly parallel to `weekly`
+(rolling 7 days). Both periods use the same `period_bounds()` logic with
+only the window length differing.
+
+**Rejected alternative:** calendar month (1st to today, or 1st-to-last-day).
+Rejected because it makes the recap's meaning depend on what day of the
+month you happen to run it — on the 2nd, a "monthly" recap would cover
+almost nothing, while at the end of the month it would cover almost
+everything. A rolling window always means the same thing regardless of
+when you ask for it.
+
+## 2026-07-09 — Session 3: skills_fetched excludes typo'd/nonexistent skill names
+
+**Context:** `get_skill` logs a `fetched` row in `skill_usage` even when the
+name doesn't match any real skill (a Session 1 decision, so failed lookups
+are visible in analytics). That means a straight `DISTINCT skill_name`
+query over `skill_usage` could count a typo as a "skill fetched."
+
+**Decision:** both `skills_fetched_in_range` (recap) and the cumulative
+count in `compute_learning_stats` intersect the distinct fetched names
+against the names that currently exist in `skills/` (via
+`skills_store.load_all_skills()`), so only real skills count toward
+"skills fetched" or path progress.
+
 ## 2026-07-08 — Session 2: implicit sessions, not start_session/end_session
 
 **Context:** the schema says a session has exactly one worklog entry but many
