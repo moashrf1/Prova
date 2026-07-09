@@ -82,6 +82,19 @@ def learning_stats(path: str | None = None) -> dict:
 
 
 @mcp.tool()
+def token_report(period: str | None = None) -> dict:
+    """How many context content tokens the skills library saved vs. loading
+    the whole library up front (the counterfactual baseline).
+
+    period: "weekly" (last 7 days), "monthly" (last 30 days), or omit for
+    all-time cumulative. This measures server-side content size -- labeled
+    "context content tokens (estimated)" -- not client-billed API tokens,
+    which this server can't see.
+    """
+    return analytics_store.compute_token_report(period)
+
+
+@mcp.tool()
 def generate_recap(period: str) -> dict:
     """Temporal summary of recent work ("weekly" = last 7 days, "monthly" = last 30 days).
 
