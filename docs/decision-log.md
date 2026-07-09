@@ -4,6 +4,55 @@ Authorship and reasoning record for the AI Enablement System build, per the
 "full authorship evidence from commit #1" guardrail. One entry per meaningful
 decision, newest first.
 
+## 2026-07-09 — Session 5: orchestration — three peer subagents, not a code orchestrator
+
+**Context:** with all six MCP tools built (Sessions 1-3), the recurring
+need is composing them into workflows ("wrap up my session" = summarize →
+log work → log decisions → show a recap), not writing new tools.
+
+**Decision:** three Claude Code subagents (`.claude/agents/worklog-agent.md`,
+`skills-agent.md`, `analytics-agent.md`), each scoped via `tools:` to
+exactly the MCP tools its role needs, with the main Claude Code session as
+orchestrator reading each agent's `description` to route work. Built and
+validated one agent fully (Worklog) before adding the other two, so the
+subagent mechanics were understood on a single well-scoped case before
+scaling the pattern.
+
+**Rejected alternative:** a hand-rolled Python orchestrator that calls the
+MCP tools directly in whatever order a script decides. Rejected because
+subagents teach the transferable pattern (if this project goes official,
+each employee's own Claude Code session orchestrates their own subagents
+with zero extra infrastructure) and because a hand-rolled orchestrator
+only earns its complexity once fine-grained routing/state control is
+actually needed -- which hasn't come up.
+
+**Why three peers instead of one bigger agent:** retrieval (Skills),
+summarization (Worklog), and analysis (Analytics) are genuinely different
+tasks. Merging them into one agent with all six tools would mean every
+invocation carries permissions and context it doesn't need for that
+specific job -- the opposite of the least-privilege design already used
+throughout this project (e.g. `analytics_store`'s read-only connections).
+
+**Verified, not assumed:** every claim below was checked against real
+tool output or real database state from an actual delegation, not
+inferred from reading the agent files:
+- Fetched the official subagent docs directly (rather than trust a
+  subagent's secondhand summary) and found one real delta from the build
+  doc: nested subagent spawning is supported since v2.1.172 (capped at
+  depth 5), not blocked at one level as the doc assumed. Doesn't change
+  the design -- none of these three agents need the `Agent` tool.
+- Worklog Agent: a real delegation produced a decision row timestamped
+  *before* its worklog row, and the session's `ended_at` was set --
+  confirming the "decisions before the closing log_work" ordering rule
+  actually held, not just that the prompt asked for it.
+- Skills Agent: `skill_usage` showed all 6 skills `listed` but exactly 1
+  `fetched` for a real question -- progressive disclosure held under
+  actual use, not only in the system prompt's wording.
+- Full orchestration: a single request touching both Worklog and
+  Analytics agents produced a composed reply whose every number (session
+  count, decision count, distinct skills fetched, path progress) matched
+  the database exactly.
+
 ## 2026-07-09 — Session 5: subagent format verified; one delta from the build doc
 
 **Context:** Phase 1 of the Session 5 doc asked me to confirm the current
