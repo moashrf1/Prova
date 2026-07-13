@@ -10,7 +10,7 @@ import work_store
 TIMESTAMP_FORMAT = analytics_store.TIMESTAMP_FORMAT
 
 
-def write_skill(skills_dir, filename, name, path):
+def write_skill(skills_dir, filename, name, path, tags="[test]"):
     content = (
         "---\n"
         f"name: {name}\n"
@@ -18,7 +18,7 @@ def write_skill(skills_dir, filename, name, path):
         "description: A test skill.\n"
         "category: technical\n"
         f"path: {path if path is not None else 'null'}\n"
-        "tags: [test]\n"
+        f"tags: {tags}\n"
         "---\n"
         "# Body\n\nContent.\n"
     )
@@ -206,6 +206,62 @@ def test_learning_stats_without_path_omits_path_keys(isolated_analytics):
         "total_decisions": 0,
         "total_distinct_skills_fetched": 0,
     }
+
+
+def test_skills_referenced_in_worklog_detects_keywords_without_a_fetch(isolated_analytics):
+    db_path = isolated_analytics
+    skills_dir = db_path.parent.parent / "skills"
+    now = datetime.utcnow()
+
+    write_skill(skills_dir, "a.md", "skill-a", "test-path", tags="[alpha, apple]")
+    session_id = seed_session(db_path, "proj", ts(now, 1), ts(now, 1, hours=1))
+    seed_worklog(db_path, session_id, "Applied the alpha technique using an apple analogy.", ts(now, 1, hours=1))
+
+    referenced = analytics_store.skills_referenced_in_worklog()
+
+    assert referenced == {"skill-a"}
+
+
+def test_learning_stats_path_engaged_merges_fetched_and_referenced(isolated_analytics):
+    db_path = isolated_analytics
+    skills_dir = db_path.parent.parent / "skills"
+    now = datetime.utcnow()
+
+    # skill-a: referenced in worklog text only, never fetched
+    write_skill(skills_dir, "a.md", "skill-a", "test-path", tags="[alpha, apple]")
+    # skill-b: explicitly fetched, never mentioned in any worklog text
+    write_skill(skills_dir, "b.md", "skill-b", "test-path", tags="[beta, banana]")
+
+    session_id = seed_session(db_path, "proj", ts(now, 1), ts(now, 1, hours=1))
+    seed_worklog(db_path, session_id, "Applied the alpha technique using an apple analogy.", ts(now, 1, hours=1))
+    seed_skill_usage(db_path, "skill-b", "fetched", ts(now, 1))
+
+    stats = analytics_store.compute_learning_stats("test-path")
+
+    assert stats["path_skill_total"] == 2
+    assert stats["path_skill_fetched_count"] == 1
+    assert stats["path_skill_engaged_count"] == 2
+    assert stats["path_skills_fetched"] == ["skill-b"]
+    assert stats["path_skills_referenced_only"] == ["skill-a"]
+    assert stats["path_skills_remaining"] == []
+
+
+def test_learning_stats_path_skill_fetched_and_referenced_not_double_counted(isolated_analytics):
+    db_path = isolated_analytics
+    skills_dir = db_path.parent.parent / "skills"
+    now = datetime.utcnow()
+
+    write_skill(skills_dir, "a.md", "skill-a", "test-path", tags="[alpha, apple]")
+
+    session_id = seed_session(db_path, "proj", ts(now, 1), ts(now, 1, hours=1))
+    seed_worklog(db_path, session_id, "Applied the alpha technique using an apple analogy.", ts(now, 1, hours=1))
+    seed_skill_usage(db_path, "skill-a", "fetched", ts(now, 1))
+
+    stats = analytics_store.compute_learning_stats("test-path")
+
+    assert stats["path_skills_fetched"] == ["skill-a"]
+    assert stats["path_skills_referenced_only"] == []  # not double-counted as "referenced only"
+    assert stats["path_skill_engaged_count"] == 1
 
 
 def test_project_rollups_aggregates_sessions_and_duration(isolated_analytics):

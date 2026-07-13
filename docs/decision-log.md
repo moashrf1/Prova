@@ -4,6 +4,49 @@ Authorship and reasoning record for the AI Enablement System build, per the
 "full authorship evidence from commit #1" guardrail. One entry per meaningful
 decision, newest first.
 
+## 2026-07-13 — Skill classification from worklog text: keyword matching, merged into learning_stats
+
+**Context:** `learning_stats`'s path progress only counted a skill as
+"engaged with" if `get_skill` had been explicitly called for it. But
+someone can apply a skill's technique and describe it in a worklog entry
+without re-fetching it that session (already known, or fetched earlier) --
+that usage was invisible to the metric.
+
+**Decision:** classify skills from worklog text via deterministic
+keyword/tag matching (`skills_store.classify_skills_in_text`), not an LLM
+or embeddings-based approach -- consistent with how `token_metrics.py`'s
+chars/4 heuristic was chosen: dependency-light, deterministic, and
+explainable (you can always show exactly which words matched). Merged
+into `learning_stats`: `path_skill_engaged_count` is the union of fetched
+and referenced-in-text skills; `path_skills_fetched` and
+`path_skills_referenced_only` distinguish the two so the source of each
+signal stays visible, not blurred into one undifferentiated count.
+
+**Two precision safeguards, both found necessary during testing, not
+assumed upfront:**
+- **A keyword shared by 2+ skills is dropped from all of them.** Tags like
+  "product" (shared by all three PM skills) or "ai" (shared by two
+  technical ones) can't discriminate between skills, so keeping them
+  would make almost any PM-flavored sentence match all three PM skills
+  indiscriminately.
+- **Require at least 2 distinct keyword hits, not 1.** A single
+  coincidental word (e.g. "database" appearing in an unrelated sentence)
+  isn't enough evidence on its own; requiring two independent hits
+  meaningfully cuts false positives while still matching real, on-topic
+  descriptions.
+
+**Known, accepted limitation:** exact word-boundary matching doesn't stem
+word forms -- a worklog mentioning "prompt" won't match `prompting-patterns`
+via its "prompting" keyword. This is a precision-over-recall tradeoff,
+not an oversight: adding stemming would add complexity and its own false-
+positive surface for a metric whose whole value is being simple enough to
+audit by hand.
+
+**Dashboard:** the Learning Path chips now show three states, not two --
+solid (fetched via `get_skill`), dashed (referenced in worklog text only),
+and neutral (not yet engaged) -- so the distinction stays visible there
+too, not just in the API response.
+
 ## 2026-07-09 — Session 6: derive tokens_est from summed chars, not summed per-row estimates
 
 **Context:** found while hand-verifying Phase 2's checkpoint math, not by

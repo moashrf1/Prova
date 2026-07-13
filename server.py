@@ -74,9 +74,13 @@ def log_decision(
 def learning_stats(path: str | None = None) -> dict:
     """Cumulative, all-time progress: total skills fetched, decisions, sessions.
 
-    Pass a career path (e.g. "product-manager") to also get fetched-vs-total
-    progress for that path's skills, read from the skill frontmatter's
-    `path` field.
+    Pass a career path (e.g. "product-manager") to also get progress for
+    that path's skills, read from the skill frontmatter's `path` field.
+    Path progress counts a skill as "engaged with" if it was either
+    explicitly fetched via get_skill, OR its keywords were detected in a
+    worklog entry's tasks/learnings text (applied without re-fetching that
+    session). `path_skills_fetched` and `path_skills_referenced_only`
+    distinguish the two; `path_skill_engaged_count` is their union.
     """
     return analytics_store.compute_learning_stats(path)
 

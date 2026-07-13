@@ -189,6 +189,20 @@ def compute_recap(period: str, now: datetime | None = None) -> dict:
     }
 
 
+def skills_referenced_in_worklog() -> set[str]:
+    """Skill names whose keywords appear in any worklog entry's tasks or
+    learnings text (see skills_store.classify_skills_in_text) -- this is
+    what lets a skill count as "engaged with" when its technique was
+    applied and described, even if get_skill was never called for it in
+    that session (e.g. already known, or fetched in an earlier one)."""
+    with db_connection() as conn:
+        rows = conn.execute(
+            "SELECT tasks, COALESCE(learnings, '') FROM worklog"
+        ).fetchall()
+    combined_text = " ".join(f"{tasks} {learnings}" for tasks, learnings in rows)
+    return set(skills_store.classify_skills_in_text(combined_text))
+
+
 def compute_learning_stats(path: str | None = None) -> dict:
     with db_connection() as conn:
         total_sessions = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
@@ -211,14 +225,20 @@ def compute_learning_stats(path: str | None = None) -> dict:
     }
 
     if path is not None:
+        referenced_names = skills_referenced_in_worklog() & valid_names
         path_skill_names = {s["name"] for s in all_skills if s["path"] == path}
-        fetched_on_path = sorted(path_skill_names & fetched_names)
-        remaining_on_path = sorted(path_skill_names - fetched_names)
+        fetched_on_path = path_skill_names & fetched_names
+        referenced_on_path = path_skill_names & referenced_names
+        engaged_on_path = fetched_on_path | referenced_on_path
+        remaining_on_path = path_skill_names - engaged_on_path
+
         stats["path"] = path
         stats["path_skill_total"] = len(path_skill_names)
         stats["path_skill_fetched_count"] = len(fetched_on_path)
-        stats["path_skills_fetched"] = fetched_on_path
-        stats["path_skills_remaining"] = remaining_on_path
+        stats["path_skill_engaged_count"] = len(engaged_on_path)
+        stats["path_skills_fetched"] = sorted(fetched_on_path)
+        stats["path_skills_referenced_only"] = sorted(referenced_on_path - fetched_on_path)
+        stats["path_skills_remaining"] = sorted(remaining_on_path)
 
     return stats
 
