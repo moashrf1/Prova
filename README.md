@@ -152,12 +152,35 @@ stretch of work with exactly one worklog entry.
   and lets the calling agent turn it into a short narrative.
 - **`learning_stats(path=None)`** — cumulative, all-time, never windowed by
   date: total sessions, total decisions, total distinct skills fetched.
-  Pass a career path (e.g. `"product-manager"`) to add fetched-vs-total
-  progress for that path's skills, e.g. "2 of 3 PM-path skills fetched" —
-  this is what finally puts the `path` field (stored on skills since
-  Session 1) to use. Both this and `generate_recap` exclude
+  Pass a career path (e.g. `"product-manager"`) to add engagement
+  progress for that path's skills, e.g. "2 of 3 PM-path skills engaged
+  with" — this is what finally puts the `path` field (stored on skills
+  since Session 1) to use. Both this and `generate_recap` exclude
   fetched-but-nonexistent skill names (a typo'd `get_skill` call still logs
   a `fetched` row) from any "skills fetched" count.
+
+### Skill engagement: fetched vs. referenced
+
+Path progress counts a skill as "engaged with" two ways, not just one:
+explicitly fetched via `get_skill`, **or** its keywords detected in a
+worklog entry's `tasks`/`learnings` text — so applying a technique you
+already know (without re-fetching it that session) still counts.
+`learning_stats` returns both `path_skills_fetched` and
+`path_skills_referenced_only` so the two signals stay distinguishable
+rather than blurred into one count; `path_skill_engaged_count` is their
+union. The dashboard's Learning Path chips show all three states: solid
+(fetched), dashed (referenced only), neutral (not yet engaged).
+
+The classifier (`skills_store.classify_skills_in_text`) is deterministic
+keyword/tag matching, not an LLM — same dependency-light philosophy as
+`token_metrics.py`. Two precision safeguards: a keyword shared by 2+
+skills can't discriminate between them, so it's dropped everywhere (e.g.
+"product," shared by all three PM skills); and a skill needs **2 distinct
+keyword hits**, not 1, so a single coincidental word doesn't trigger a
+false match. One accepted tradeoff: exact word-boundary matching doesn't
+stem word forms (a worklog saying "prompt" won't match
+`prompting-patterns`'s "prompting" keyword) — precision over recall,
+deliberately, to keep the signal simple enough to audit by hand.
 
 ### Temporal vs. cumulative
 

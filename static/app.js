@@ -254,16 +254,17 @@
         pathContainer.innerHTML = `<div class="empty-state">No skills tagged for the "${LEARNING_PATH}" path yet.</div>`;
         return;
       }
-      const pct = Math.round((stats.path_skill_fetched_count / stats.path_skill_total) * 100);
+      const pct = Math.round((stats.path_skill_engaged_count / stats.path_skill_total) * 100);
       const chips = [
-        ...stats.path_skills_fetched.map((name) => `<span class="skill-chip is-fetched">${name}</span>`),
+        ...stats.path_skills_fetched.map((name) => `<span class="skill-chip is-fetched" title="Fetched via get_skill">${name}</span>`),
+        ...stats.path_skills_referenced_only.map((name) => `<span class="skill-chip is-referenced" title="Detected in worklog text, not explicitly fetched">${name}</span>`),
         ...stats.path_skills_remaining.map((name) => `<span class="skill-chip">${name}</span>`),
       ].join("");
       pathContainer.innerHTML = `
         <div class="path-card">
           <div class="path-summary">
-            <span class="fraction">${stats.path_skill_fetched_count} of ${stats.path_skill_total}</span>
-            <span class="path-name">${LEARNING_PATH} track skills fetched</span>
+            <span class="fraction">${stats.path_skill_engaged_count} of ${stats.path_skill_total}</span>
+            <span class="path-name">${LEARNING_PATH} track skills engaged with</span>
           </div>
           <div class="path-bar"><div class="path-bar-fill" style="width: ${pct}%"></div></div>
           <div class="skill-chip-list">${chips}</div>

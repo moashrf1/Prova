@@ -138,3 +138,52 @@ def find_skill(skill_name: str) -> dict | None:
         if skill["name"] == skill_name:
             return skill
     return None
+
+
+def _skill_keyword_index() -> dict[str, set[str]]:
+    """Distinguishing keywords per skill, for matching free text against
+    skill relevance without an LLM or a tokenizer dependency -- deterministic
+    keyword matching, consistent with token_metrics.py's chars/4 heuristic.
+
+    Built from each skill's tags plus the words in its kebab-case name. A
+    keyword shared across 2+ skills can't tell them apart, so it's dropped
+    everywhere it appears -- this is what stops a word like "product"
+    (shared by all three PM skills) or "ai" (shared by two technical ones)
+    from producing a false-positive match.
+    """
+    skills = load_all_skills()
+    raw: dict[str, set[str]] = {}
+    for skill in skills:
+        words = {w.lower() for w in skill.get("tags", []) if len(w) > 2}
+        words.update(w.lower() for w in skill["name"].split("-") if len(w) > 2)
+        raw[skill["name"]] = words
+
+    owner_count: dict[str, int] = {}
+    for words in raw.values():
+        for word in words:
+            owner_count[word] = owner_count.get(word, 0) + 1
+
+    return {
+        name: {word for word in words if owner_count[word] == 1}
+        for name, words in raw.items()
+    }
+
+
+def classify_skills_in_text(text: str) -> list[str]:
+    """Skill names whose distinguishing keywords appear as whole words in
+    `text`. Requires at least 2 distinct keyword matches per skill, so one
+    coincidental word can't trigger a false positive on its own.
+
+    This is deliberately a lightweight signal for "this work referenced
+    this skill's topic," not a claim that the skill's content was actually
+    read -- get_skill's usage log remains the source of truth for that.
+    """
+    text_lower = text.lower()
+    matched = []
+    for name, keywords in _skill_keyword_index().items():
+        if not keywords:
+            continue
+        hits = {kw for kw in keywords if re.search(rf"\b{re.escape(kw)}\b", text_lower)}
+        if len(hits) >= 2:
+            matched.append(name)
+    return sorted(matched)

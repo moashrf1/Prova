@@ -223,3 +223,54 @@ def test_record_library_snapshot_inserts_new_row_when_library_changes(isolated_s
             "SELECT total_skills FROM library_snapshots ORDER BY id"
         ).fetchall()
     assert snapshots == [(1,), (2,)]
+
+
+def test_classify_skills_in_text_matches_on_two_distinct_keywords(isolated_store):
+    skills_dir, _ = isolated_store
+    write_skill(
+        skills_dir,
+        "sql.md",
+        name="sql-query-optimization",
+        tags="[sql, performance, database]",
+    )
+
+    matched = skills_store.classify_skills_in_text(
+        "Optimized the slow query with better indexing on the database."
+    )
+
+    assert matched == ["sql-query-optimization"]
+
+
+def test_classify_skills_in_text_requires_two_hits_not_one(isolated_store):
+    skills_dir, _ = isolated_store
+    write_skill(
+        skills_dir,
+        "sql.md",
+        name="sql-query-optimization",
+        tags="[sql, performance, database]",
+    )
+
+    # only one distinguishing keyword ("database") appears -- should NOT match
+    matched = skills_store.classify_skills_in_text("Backed up the database today.")
+
+    assert matched == []
+
+
+def test_classify_skills_in_text_excludes_keywords_shared_by_multiple_skills(isolated_store):
+    skills_dir, _ = isolated_store
+    write_skill(skills_dir, "a.md", name="product-discovery", tags="[product, discovery]")
+    write_skill(skills_dir, "b.md", name="prioritization-frameworks", tags="[product, strategy]")
+
+    # "product" is shared by both skills, so it can't discriminate -- with
+    # it excluded, this text only has one distinguishing hit ("discovery"),
+    # not the two needed to match.
+    matched = skills_store.classify_skills_in_text("Worked on the product roadmap.")
+
+    assert matched == []
+
+
+def test_classify_skills_in_text_no_match_returns_empty_list(isolated_store):
+    skills_dir, _ = isolated_store
+    write_skill(skills_dir, "a.md", name="skill-a", tags="[alpha, beta]")
+
+    assert skills_store.classify_skills_in_text("completely unrelated text") == []
