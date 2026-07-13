@@ -4,6 +4,32 @@ Authorship and reasoning record for the AI Enablement System build, per the
 "full authorship evidence from commit #1" guardrail. One entry per meaningful
 decision, newest first.
 
+## 2026-07-13 — All-skills engagement view: new dashboard section, not a bar-chart replacement
+
+**Context:** the fetched/referenced-only/neither chip visualization only
+existed inside "Learning path," scoped to the `product-manager` path's 3
+skills. The 3 technical skills had no equivalent view -- a technical skill
+referenced in worklog text but never fetched was invisible anywhere in the
+dashboard, even though the underlying classifier (`classify_skills_in_text`)
+works library-wide, not just within one path.
+
+**Decision:** a new "All skills" dashboard section (`analytics_store.
+skill_engagement_overview()`, `GET /api/skill-engagement`) showing every
+skill in the library as a chip with the same three states, plus a small
+legend explaining the colors since this section has no surrounding
+context to lean on (unlike "Learning path," where the fraction/label
+already frames what the chips mean).
+
+**Rejected alternative:** replacing the existing "Skill fetch counts" bar
+chart with this chip view. Kept both: the bar chart answers "how many
+times," the chip view answers "fetched vs. merely referenced vs. never
+touched" -- different questions, both worth keeping visible.
+
+**No new MCP tool added** -- `skill_engagement_overview` is dashboard-only,
+same precedent as `skill_usage_counts`/`/api/skills` (Session 4), which
+also never got a corresponding MCP tool. Not every analytics view needs a
+conversational counterpart.
+
 ## 2026-07-13 — Skill classification from worklog text: keyword matching, merged into learning_stats
 
 **Context:** `learning_stats`'s path progress only counted a skill as

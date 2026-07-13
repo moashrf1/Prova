@@ -140,6 +140,17 @@ def test_skills_endpoint_includes_seed_skill(client):
     assert "skill-a" in names
 
 
+def test_skill_engagement_endpoint_matches_analytics_store(client):
+    response = client.get("/api/skill-engagement")
+
+    assert response.status_code == 200
+    body = {s["name"]: s for s in response.json()}
+    expected = {s["name"]: s for s in analytics_store.skill_engagement_overview()}
+    assert body == expected
+    assert "skill-a" in body
+    assert set(body["skill-a"].keys()) == {"name", "title", "category", "path", "fetched", "referenced_only"}
+
+
 def test_token_report_endpoint_matches_analytics_store(client):
     skills_store.record_library_snapshot()
     skill = skills_store.load_all_skills()[0]

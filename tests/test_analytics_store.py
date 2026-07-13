@@ -335,6 +335,48 @@ def test_skill_usage_counts_excludes_nonexistent_skill_names(isolated_analytics)
     assert names == {"skill-a", "skill-b", "skill-c"}
 
 
+def test_skill_engagement_overview_covers_whole_library_not_just_one_path(isolated_analytics):
+    db_path = isolated_analytics
+    skills_dir = db_path.parent.parent / "skills"
+    now = datetime.utcnow()
+
+    write_skill(skills_dir, "a.md", "skill-a", "test-path", tags="[alpha, apple]")
+    write_skill(skills_dir, "b.md", "skill-b", "test-path", tags="[beta, banana]")
+    # skill-c has no path (path=None), unlike the learning_stats path view
+    # which only ever looks at one path's subset
+
+    session_id = seed_session(db_path, "proj", ts(now, 1), ts(now, 1, hours=1))
+    seed_worklog(db_path, session_id, "Applied the alpha technique using an apple analogy.", ts(now, 1, hours=1))
+    seed_skill_usage(db_path, "skill-b", "fetched", ts(now, 1))
+
+    overview = {s["name"]: s for s in analytics_store.skill_engagement_overview()}
+
+    assert set(overview.keys()) == {"skill-a", "skill-b", "skill-c"}
+    assert overview["skill-a"]["fetched"] is False
+    assert overview["skill-a"]["referenced_only"] is True
+    assert overview["skill-b"]["fetched"] is True
+    assert overview["skill-b"]["referenced_only"] is False
+    assert overview["skill-c"]["fetched"] is False
+    assert overview["skill-c"]["referenced_only"] is False
+
+
+def test_skill_engagement_overview_fetched_takes_precedence_over_referenced(isolated_analytics):
+    db_path = isolated_analytics
+    skills_dir = db_path.parent.parent / "skills"
+    now = datetime.utcnow()
+
+    write_skill(skills_dir, "a.md", "skill-a", "test-path", tags="[alpha, apple]")
+
+    session_id = seed_session(db_path, "proj", ts(now, 1), ts(now, 1, hours=1))
+    seed_worklog(db_path, session_id, "Applied the alpha technique using an apple analogy.", ts(now, 1, hours=1))
+    seed_skill_usage(db_path, "skill-a", "fetched", ts(now, 1))
+
+    overview = {s["name"]: s for s in analytics_store.skill_engagement_overview()}
+
+    assert overview["skill-a"]["fetched"] is True
+    assert overview["skill-a"]["referenced_only"] is False  # not both flags true at once
+
+
 def test_library_baseline_returns_none_without_a_snapshot(isolated_analytics):
     assert analytics_store.library_baseline() is None
 

@@ -97,14 +97,17 @@ All under `/api/`, all `GET`, all read-only, all reusing `analytics_store.py`:
 | `/api/decisions?limit=N` | Most recent N decisions (default 20) |
 | `/api/skills` | Every skill with its all-time fetch count (0 if never fetched) |
 | `/api/token-report?period=weekly\|monthly` | Same numbers as the `token_report` MCP tool (omit `period` for cumulative) |
+| `/api/skill-engagement` | Every skill in the library with its fetched/referenced-only/neither status (dashboard-only, no MCP tool -- same precedent as `/api/skills`) |
 
 ### Dashboard sections
 
 A prominent **token savings** card (headline percentage + a weekly/monthly/
 all-time comparison chart) right at the top → recap stat cards (with the
 weekly/monthly toggle) → activity charts (time per project, skill fetch
-counts) → learning-path progress ("N of M `product-manager`-track skills
-fetched", with fetched/remaining skills as chips) → a projects table → a
+counts) → **all skills** (every skill in the library as a chip, showing
+fetched/referenced-only/neither for the whole library, not just one path)
+→ learning-path progress ("N of M `product-manager`-track skills engaged
+with", with the same three chip states) → a projects table → a
 recent-decisions log (the visible authorship/IP trail). Every section
 handles the empty-database case (sensible "nothing yet" messages, no
 errors) and both light and dark mode.

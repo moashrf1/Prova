@@ -9,6 +9,7 @@
   const statGrid = document.getElementById("stat-grid");
   const periodButtons = document.querySelectorAll(".period-toggle button");
   const pathContainer = document.getElementById("path-container");
+  const allSkillsContainer = document.getElementById("all-skills-container");
   const projectsContainer = document.getElementById("projects-container");
   const decisionsContainer = document.getElementById("decisions-container");
   const tokenSavingsContainer = document.getElementById("token-savings-container");
@@ -274,6 +275,38 @@
     }
   }
 
+  async function loadAllSkills() {
+    try {
+      const skills = await fetchJson("/api/skill-engagement");
+      if (skills.length === 0) {
+        allSkillsContainer.innerHTML = '<div class="empty-state">No skills in the library yet.</div>';
+        return;
+      }
+      const chips = skills
+        .map((s) => {
+          const cls = s.fetched ? "is-fetched" : s.referenced_only ? "is-referenced" : "";
+          const title = s.fetched
+            ? "Fetched via get_skill"
+            : s.referenced_only
+            ? "Detected in worklog text, not explicitly fetched"
+            : "Not yet engaged with";
+          return `<span class="skill-chip ${cls}" title="${title}">${s.title}</span>`;
+        })
+        .join("");
+      allSkillsContainer.innerHTML = `
+        <div class="path-card">
+          <div class="skill-chip-list">${chips}</div>
+          <div class="token-caveat">
+            <span class="skill-chip is-fetched" style="margin-right: 6px;">&nbsp;</span>fetched via get_skill &middot;
+            <span class="skill-chip is-referenced" style="margin: 0 6px 0 10px;">&nbsp;</span>referenced in worklog text only &middot;
+            <span class="skill-chip" style="margin: 0 6px 0 10px;">&nbsp;</span>not yet engaged with
+          </div>
+        </div>`;
+    } catch (err) {
+      renderError(allSkillsContainer, err.message);
+    }
+  }
+
   async function loadProjects() {
     try {
       const projects = await fetchJson("/api/projects");
@@ -338,6 +371,7 @@
 
   loadRecap("weekly");
   loadCharts();
+  loadAllSkills();
   loadLearningPath();
   loadProjects();
   loadDecisions();
