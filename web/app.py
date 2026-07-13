@@ -60,6 +60,11 @@ def get_skills():
     return _run_readonly(analytics_store.skill_usage_counts)
 
 
+@app.get("/api/skill-engagement")
+def get_skill_engagement():
+    return _run_readonly(analytics_store.skill_engagement_overview)
+
+
 @app.get("/api/token-report")
 def get_token_report(period: str | None = None):
     if period is not None and period not in analytics_store.PERIOD_WINDOWS:

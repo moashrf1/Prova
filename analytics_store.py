@@ -330,6 +330,41 @@ def skill_usage_counts() -> list[dict]:
     ]
 
 
+def skill_engagement_overview() -> list[dict]:
+    """Every skill's engagement status, library-wide (not path-filtered):
+    fetched (via get_skill), referenced (its keywords detected in worklog
+    text, and not already fetched), or neither. Same fetched/referenced
+    signals compute_learning_stats uses for path progress, just applied to
+    every skill instead of one path's subset -- so a technical skill
+    applied without a get_skill call is visible too, not only PM-track
+    skills."""
+    with db_connection() as conn:
+        fetched_names = {
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT skill_name FROM skill_usage WHERE action = 'fetched'"
+            ).fetchall()
+        }
+
+    all_skills = skills_store.load_all_skills()
+    valid_names = {s["name"] for s in all_skills}
+    fetched_names &= valid_names
+    referenced_names = skills_referenced_in_worklog() & valid_names
+
+    return [
+        {
+            "name": skill["name"],
+            "title": skill["title"],
+            "category": skill["category"],
+            "path": skill["path"],
+            "fetched": skill["name"] in fetched_names,
+            "referenced_only": skill["name"] in referenced_names
+            and skill["name"] not in fetched_names,
+        }
+        for skill in all_skills
+    ]
+
+
 def _content_tokens_in_range(start: str, end: str) -> dict:
     """Actual content served: every 'listed' row's metadata size plus every
     'fetched' row's body size (NULL sizes -- pre-instrumentation history,
