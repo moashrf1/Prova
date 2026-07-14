@@ -4,6 +4,42 @@ Authorship and reasoning record for the AI Enablement System build, per the
 "full authorship evidence from commit #1" guardrail. One entry per meaningful
 decision, newest first.
 
+## 2026-07-13 — Tech stack usage chart: a separate module, not an extension of the skills classifier
+
+**Context:** the user wanted a chart of programming languages/technologies
+used (Python, SQL, C#, C++, etc.) -- a different concept from the skills
+library's own topics (e.g. "sql-query-optimization" is a technique, not
+"SQL the language").
+
+**Decision:** a new, separate module (`tech_stack.py`) with its own fixed
+vocabulary of ~17 common languages/technologies, rather than extending
+`skills_store.classify_skills_in_text` or deriving the list from skill
+tags. Reasoning: these are genuinely different concepts (a curated
+methodology library vs. a fixed technology vocabulary) and conflating them
+would make both harder to reason about. Same dependency-light, keyword-
+matching philosophy as the skills classifier and `token_metrics.py`,
+applied to a different vocabulary.
+
+**Counts entries, not raw occurrences**: a worklog entry mentioning "SQL"
+three times counts once, matching "how many times did this come up in
+your logged work," not "how many times was the word typed."
+
+**Only mentioned languages are returned** (no zero-count rows), unlike
+`skill_usage_counts` which deliberately includes never-fetched skills.
+Reasoning: the skills library is a small, fixed set of 6 where showing
+every one (even at zero) is useful context; the language vocabulary here
+is much broader (~17 entries), so listing every unmentioned one would
+clutter the chart rather than inform it.
+
+**Known, accepted limitation:** a few language names (Swift, Rust, Go)
+overlap with common English words, so occasional false positives are
+possible (e.g. "the response was swift" would register as a Swift
+mention). Documented in `tech_stack.py` itself rather than treated as a
+bug -- this is a lightweight signal for a personal dashboard, easy to
+tighten a pattern for later if a language starts showing up spuriously in
+practice. "Go" is intentionally detected only via "golang" to avoid the
+much higher false-positive rate of the bare word "go."
+
 ## 2026-07-13 — All-skills engagement view: new dashboard section, not a bar-chart replacement
 
 **Context:** the fetched/referenced-only/neither chip visualization only
