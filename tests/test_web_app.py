@@ -186,3 +186,29 @@ def test_token_report_endpoint_handles_no_snapshot_yet(client):
 
     assert response.status_code == 200
     assert response.json()["baseline_tokens_est"] is None
+
+
+def test_tech_stack_endpoint_matches_analytics_store(client):
+    with sqlite3.connect(work_store.DB_PATH) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("INSERT INTO projects (name) VALUES ('proj-z')")
+        pid = conn.execute("SELECT id FROM projects WHERE name='proj-z'").fetchone()[0]
+        conn.execute(
+            "INSERT INTO sessions (project_id, started_at, ended_at) VALUES "
+            "(?, datetime('now'), datetime('now'))",
+            (pid,),
+        )
+        sid = conn.execute("SELECT id FROM sessions").fetchone()[0]
+        conn.execute(
+            "INSERT INTO worklog (session_id, tasks) VALUES (?, 'Wrote a python script')",
+            (sid,),
+        )
+        conn.commit()
+
+    response = client.get("/api/tech-stack")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == analytics_store.tech_stack_usage()
+    assert {u["name"] for u in body} == {"Python"}
+

@@ -26,10 +26,14 @@ reasoning behind key choices.
   snapshot).
 - `work_store.py` — projects/sessions/worklog/decisions: creation, lookup,
   and the session open/close logic behind `log_work` and `log_decision`.
+- `tech_stack.py` — keyword detection for programming languages/
+  technologies (Python, SQL, C#, C++, ...) mentioned in worklog text. A
+  separate concept from the skills library's own tags.
 - `analytics_store.py` — read-only queries over the accumulated data
   (every connection opens SQLite in `mode=ro`): temporal aggregates for
   `generate_recap`, cumulative/path-aware stats for `learning_stats`,
-  per-project rollups, recent decisions, skill usage counts, and the token
+  per-project rollups, recent decisions, skill usage counts, skill
+  engagement (fetched vs. referenced), tech-stack usage, and the token
   savings math for `token_report`. Nothing here writes, and now nothing here
   *can*.
 - `web/app.py` — a FastAPI app exposing the same `analytics_store` queries
@@ -98,18 +102,20 @@ All under `/api/`, all `GET`, all read-only, all reusing `analytics_store.py`:
 | `/api/skills` | Every skill with its all-time fetch count (0 if never fetched) |
 | `/api/token-report?period=weekly\|monthly` | Same numbers as the `token_report` MCP tool (omit `period` for cumulative) |
 | `/api/skill-engagement` | Every skill in the library with its fetched/referenced-only/neither status (dashboard-only, no MCP tool -- same precedent as `/api/skills`) |
+| `/api/tech-stack` | Programming languages/technologies (Python, SQL, C#, C++, ...) detected in worklog text, with a per-entry mention count (dashboard-only) |
 
 ### Dashboard sections
 
 A prominent **token savings** card (headline percentage + a weekly/monthly/
 all-time comparison chart) right at the top → recap stat cards (with the
 weekly/monthly toggle) → activity charts (time per project, skill fetch
-counts) → **all skills** (every skill in the library as a chip, showing
-fetched/referenced-only/neither for the whole library, not just one path)
-→ learning-path progress ("N of M `product-manager`-track skills engaged
-with", with the same three chip states) → a projects table → a
-recent-decisions log (the visible authorship/IP trail). Every section
-handles the empty-database case (sensible "nothing yet" messages, no
+counts, and languages/tech mentioned in worklog text) → **all skills**
+(every skill in the library as a chip, showing fetched/referenced-only/
+neither for the whole library, not just one path) → learning-path progress
+("N of M `product-manager`-track skills engaged with", with the same three
+chip states) → a projects table → a recent-decisions log (the visible
+authorship/IP trail). Every section handles the empty-database case
+(sensible "nothing yet" messages, no
 errors) and both light and dark mode.
 
 ## Tools

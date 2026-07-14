@@ -488,3 +488,52 @@ def test_recap_includes_token_saving_block_matching_token_report(isolated_analyt
     assert recap["token_saving"]["baseline_tokens_est"] == report["baseline_tokens_est"]
     assert recap["token_saving"]["saving_tokens_est"] == report["saving_tokens_est"]
     assert recap["token_saving"]["saving_pct"] == report["saving_pct"]
+
+
+def test_tech_stack_usage_counts_entries_not_raw_occurrences(isolated_analytics):
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+
+    session_id = seed_session(db_path, "proj", ts(now, 1), ts(now, 1, hours=1))
+    # SQL mentioned twice within ONE entry (tasks + learnings) -- should count once
+    seed_worklog(
+        db_path,
+        session_id,
+        "Wrote a python script using sql queries",
+        ts(now, 1, hours=1),
+        learnings="Learned more sql today",
+    )
+
+    usage = {u["name"]: u["mention_count"] for u in analytics_store.tech_stack_usage()}
+
+    assert usage["SQL"] == 1
+    assert usage["Python"] == 1
+
+
+def test_tech_stack_usage_sums_across_multiple_entries(isolated_analytics):
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+
+    session_id = seed_session(db_path, "proj", ts(now, 1), ts(now, 1, hours=1))
+    seed_worklog(db_path, session_id, "Wrote a python script", ts(now, 1, hours=1))
+    seed_worklog(db_path, session_id, "Fixed a python bug", ts(now, 2, hours=1))
+
+    usage = {u["name"]: u["mention_count"] for u in analytics_store.tech_stack_usage()}
+
+    assert usage["Python"] == 2
+
+
+def test_tech_stack_usage_excludes_unmentioned_languages(isolated_analytics):
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+
+    session_id = seed_session(db_path, "proj", ts(now, 1), ts(now, 1, hours=1))
+    seed_worklog(db_path, session_id, "Wrote a python script", ts(now, 1, hours=1))
+
+    usage = analytics_store.tech_stack_usage()
+
+    assert {u["name"] for u in usage} == {"Python"}  # not the other ~16 languages at 0
+
+
+def test_tech_stack_usage_empty_when_no_worklog(isolated_analytics):
+    assert analytics_store.tech_stack_usage() == []
