@@ -211,4 +211,3 @@ def test_tech_stack_endpoint_matches_analytics_store(client):
     body = response.json()
     assert body == analytics_store.tech_stack_usage()
     assert {u["name"] for u in body} == {"Python"}
-
