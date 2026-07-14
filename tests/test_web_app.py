@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import analytics_store
+import repo_tech_store
 import skills_store
 import work_store
 from web.app import app
@@ -22,6 +23,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(skills_store, "SKILLS_DIR", skills_dir)
     monkeypatch.setattr(work_store, "DB_PATH", db_path)
     monkeypatch.setattr(analytics_store, "DB_PATH", db_path)
+    monkeypatch.setattr(repo_tech_store, "DB_PATH", db_path)
 
     (skills_dir / "a.md").write_text(
         "---\nname: skill-a\ntitle: A\ndescription: d\ncategory: technical\n"
@@ -30,6 +32,7 @@ def client(tmp_path, monkeypatch):
 
     skills_store.init_db()
     work_store.init_db()
+    repo_tech_store.init_db()
 
     return TestClient(app)
 
@@ -211,3 +214,28 @@ def test_tech_stack_endpoint_matches_analytics_store(client):
     body = response.json()
     assert body == analytics_store.tech_stack_usage()
     assert {u["name"] for u in body} == {"Python"}
+
+
+def test_repo_tech_stack_endpoint_matches_analytics_store(client):
+    with sqlite3.connect(work_store.DB_PATH) as conn:
+        conn.execute("INSERT INTO projects (name) VALUES ('proj-scanned')")
+        pid = conn.execute("SELECT id FROM projects WHERE name='proj-scanned'").fetchone()[0]
+        conn.execute(
+            "INSERT INTO repo_tech_scans (project_id, language, file_count) VALUES (?, 'Python', 5)",
+            (pid,),
+        )
+        conn.commit()
+
+    response = client.get("/api/repo-tech-stack")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == analytics_store.repo_tech_stack_usage()
+    assert body == [{"name": "Python", "file_count": 5}]
+
+
+def test_repo_tech_stack_endpoint_empty_when_no_scans(client):
+    response = client.get("/api/repo-tech-stack")
+
+    assert response.status_code == 200
+    assert response.json() == []

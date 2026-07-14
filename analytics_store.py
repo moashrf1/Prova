@@ -461,6 +461,23 @@ def compute_token_report(period: str | None = None, now: datetime | None = None)
     }
 
 
+def repo_tech_stack_usage() -> list[dict]:
+    """Every language detected by scanning actual git repository history
+    (see repo_tech_store.py), summed by file_count across every project
+    that's been scanned -- the structural counterpart to tech_stack_usage,
+    independent of how any worklog entry happened to be worded. Empty
+    until at least one project has been scanned via scan_project_tech_stack."""
+    with db_connection() as conn:
+        rows = conn.execute(
+            "SELECT language, SUM(file_count) FROM repo_tech_scans GROUP BY language"
+        ).fetchall()
+
+    return [
+        {"name": language, "file_count": count}
+        for language, count in sorted(rows, key=lambda kv: (-kv[1], kv[0]))
+    ]
+
+
 def tech_stack_usage() -> list[dict]:
     """How many worklog entries mention each detected language/technology
     (see tech_stack.py) -- counts entries, not raw text occurrences, so an

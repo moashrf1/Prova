@@ -70,6 +70,11 @@ def get_tech_stack():
     return _run_readonly(analytics_store.tech_stack_usage)
 
 
+@app.get("/api/repo-tech-stack")
+def get_repo_tech_stack():
+    return _run_readonly(analytics_store.repo_tech_stack_usage)
+
+
 @app.get("/api/token-report")
 def get_token_report(period: str | None = None):
     if period is not None and period not in analytics_store.PERIOD_WINDOWS:

@@ -1,6 +1,7 @@
 from mcp.server.fastmcp import FastMCP
 
 import analytics_store
+import repo_tech_store
 import skills_store
 import token_metrics
 import work_store
@@ -9,6 +10,7 @@ mcp = FastMCP("ai-enablement")
 
 skills_store.init_db()
 work_store.init_db()
+repo_tech_store.init_db()
 skills_store.record_library_snapshot()
 
 
@@ -68,6 +70,22 @@ def log_decision(
         f"(project_id={result['project_id']}, session_id={result['session_id']}, "
         f"decision_id={result['decision_id']})."
     )
+
+
+@mcp.tool()
+def scan_project_tech_stack(project_name: str, repo_path: str) -> list[dict]:
+    """Scan a local git repository's commit history for source files by
+    extension, and record the result as that project's tech-stack signal
+    (replacing any previous scan for it).
+
+    This is a structural signal, independent of worklog wording: a project
+    whose worklog entries never happen to spell out "Python" or
+    "JavaScript" still has a precise trail in its own repository -- the
+    files it actually contains. repo_path must be a local path to a git
+    repository with at least one commit, reachable from wherever this
+    server is running. Returns the language/file_count breakdown found.
+    """
+    return repo_tech_store.record_repo_scan(project_name, repo_path)
 
 
 @mcp.tool()

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import pytest
 
 import analytics_store
+import repo_tech_store
 import skills_store
 import work_store
 
@@ -35,6 +36,7 @@ def isolated_analytics(tmp_path, monkeypatch):
     monkeypatch.setattr(skills_store, "SKILLS_DIR", skills_dir)
     monkeypatch.setattr(work_store, "DB_PATH", db_path)
     monkeypatch.setattr(analytics_store, "DB_PATH", db_path)
+    monkeypatch.setattr(repo_tech_store, "DB_PATH", db_path)
 
     write_skill(skills_dir, "a.md", "skill-a", "test-path")
     write_skill(skills_dir, "b.md", "skill-b", "test-path")
@@ -42,6 +44,7 @@ def isolated_analytics(tmp_path, monkeypatch):
 
     skills_store.init_db()
     work_store.init_db()
+    repo_tech_store.init_db()
 
     return db_path
 
@@ -537,3 +540,33 @@ def test_tech_stack_usage_excludes_unmentioned_languages(isolated_analytics):
 
 def test_tech_stack_usage_empty_when_no_worklog(isolated_analytics):
     assert analytics_store.tech_stack_usage() == []
+
+
+def seed_repo_scan(db_path, project_name, language, file_count):
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("INSERT OR IGNORE INTO projects (name) VALUES (?)", (project_name,))
+        project_id = conn.execute(
+            "SELECT id FROM projects WHERE name = ?", (project_name,)
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO repo_tech_scans (project_id, language, file_count) VALUES (?, ?, ?)",
+            (project_id, language, file_count),
+        )
+
+
+def test_repo_tech_stack_usage_sums_across_projects(isolated_analytics):
+    db_path = isolated_analytics
+
+    seed_repo_scan(db_path, "proj-a", "Python", 10)
+    seed_repo_scan(db_path, "proj-b", "Python", 5)
+    seed_repo_scan(db_path, "proj-a", "SQL", 2)
+
+    usage = {u["name"]: u["file_count"] for u in analytics_store.repo_tech_stack_usage()}
+
+    assert usage["Python"] == 15
+    assert usage["SQL"] == 2
+
+
+def test_repo_tech_stack_usage_empty_when_no_scans(isolated_analytics):
+    assert analytics_store.repo_tech_stack_usage() == []
