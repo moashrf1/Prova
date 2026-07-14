@@ -4,6 +4,63 @@ Authorship and reasoning record for the AI Enablement System build, per the
 "full authorship evidence from commit #1" guardrail. One entry per meaningful
 decision, newest first.
 
+## 2026-07-14 — Repo tech-stack scanning: a structural signal alongside the worklog-text one, not a replacement
+
+**Context:** the worklog-text tech-stack chart (`tech_stack.py`) only detects
+languages literally *named* in worklog `tasks`/`learnings`. Reviewing a real
+project with a month of accumulated history, the chart showed almost nothing
+despite substantial real work across several languages -- because the
+worklog entries described *what* was built, not *which languages* it was
+built in. Rewording history after the fact doesn't scale to an
+already-large, ongoing project, and the same gap would recur for any future
+project whose entries happen not to spell out a language by name.
+
+**Decision:** a new, independent module, `repo_tech_store.py`, that scans a
+local git repository's own commit history for source files by extension
+(`.py` → Python, `.sql` → SQL, `.js` → JavaScript, ...) via a new
+`scan_project_tech_stack(project_name, repo_path)` MCP tool. This is a
+structural signal derived from the actual codebase, not from how a summary
+happened to be worded -- it can't miss a language just because nobody typed
+its name.
+
+**Kept as a second, separate chart ("Tech stack from code (git history)"),
+not merged into the existing "Languages & tech mentioned" chart.** The two
+answer genuinely different questions -- how often a language came up in
+what you *wrote about* the work, vs. how much of the actual *codebase* is in
+each language -- and conflating them into one number would hide which of the
+two a reader is actually looking at. Same "keep both, don't replace"
+precedent as the All Skills section vs. the skill fetch-count chart.
+
+**Counts distinct filenames across all of history, not commits touching a
+file.** `git log --name-only` lists every filename in every commit; a file
+edited fifty times still counts once, matching "how many files of this
+language exist in the project," not "how many times was a file of this
+language committed." Consistent with `tech_stack_usage()`'s own "count
+entries, not raw occurrences" philosophy applied to a different unit (files
+instead of worklog entries).
+
+**A rescan replaces the previous scan for that project (delete-then-insert),
+not appends to it.** There's no MCP tool to update or delete an individual
+`log_work`/`log_decision` row (by design -- an append-only log is the
+authorship/IP evidence trail), but a repo scan isn't a historical record of
+a moment in time the way a worklog entry is; it's a snapshot of "what the
+repo currently contains across its history." Re-running the scan after new
+commits should reflect the repo's current state, not accumulate stale rows
+next to fresh ones.
+
+**Extension-to-language mapping reuses the same language names as
+`tech_stack.py`'s vocabulary** (Python, SQL, JavaScript, TypeScript, C#,
+C++, Java, Go, Rust, Ruby, PHP, Swift, Kotlin, HTML, CSS, Bash, PowerShell)
+so the two charts stay visually comparable, even though one counts worklog
+entries and the other counts files.
+
+**Known, accepted limitation:** `repo_path` must be reachable from wherever
+the MCP server process is actually running. The ai-enablement-system's own
+database has no concept of "where a project's code lives" -- it only knows
+project *names* -- so this can't run automatically in the background; the
+caller supplies the path explicitly, each time, against whatever repo is
+actually in front of them.
+
 ## 2026-07-13 — Tech stack usage chart: a separate module, not an extension of the skills classifier
 
 **Context:** the user wanted a chart of programming languages/technologies

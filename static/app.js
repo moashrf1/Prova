@@ -263,6 +263,23 @@
     } catch (err) {
       renderError(document.getElementById("chart-grid"), err.message);
     }
+
+    try {
+      const repoTechStack = await fetchJson("/api/repo-tech-stack");
+      if (repoTechStack.length === 0) {
+        document.getElementById("chart-repo-tech-stack").closest(".chart-card").innerHTML =
+          '<h3>Tech stack from code (git history)</h3><div class="empty-state">No project scanned yet -- use the scan_project_tech_stack tool against a local git repo.</div>';
+      } else {
+        renderBarChart(
+          "chart-repo-tech-stack",
+          repoTechStack.map((t) => t.name),
+          repoTechStack.map((t) => t.file_count),
+          "Files found"
+        );
+      }
+    } catch (err) {
+      renderError(document.getElementById("chart-grid"), err.message);
+    }
   }
 
   async function loadLearningPath() {

@@ -14,10 +14,10 @@ reasoning behind key choices.
 
 ## What's here
 
-- `server.py` — the MCP server (FastMCP, from the `mcp` SDK). Exposes seven
+- `server.py` — the MCP server (FastMCP, from the `mcp` SDK). Exposes eight
   tools: `list_skills`, `get_skill`, `log_work`, `log_decision`,
-  `generate_recap`, `learning_stats`, `token_report`. **The only write path**
-  onto the data.
+  `scan_project_tech_stack`, `generate_recap`, `learning_stats`,
+  `token_report`. **The only write path** onto the data.
 - `token_metrics.py` — the single shared token-estimation heuristic
   (`chars // 4`) every call site routes through.
 - `skills_store.py` — reads skill markdown files from `skills/`, logs usage
@@ -29,13 +29,17 @@ reasoning behind key choices.
 - `tech_stack.py` — keyword detection for programming languages/
   technologies (Python, SQL, C#, C++, ...) mentioned in worklog text. A
   separate concept from the skills library's own tags.
+- `repo_tech_store.py` — a different, structural tech-stack signal: scans a
+  local git repository's own commit history for source files by extension
+  (`.py` → Python, `.sql` → SQL, ...), independent of how any worklog entry
+  happened to be worded. Writes to its own `repo_tech_scans` table.
 - `analytics_store.py` — read-only queries over the accumulated data
   (every connection opens SQLite in `mode=ro`): temporal aggregates for
   `generate_recap`, cumulative/path-aware stats for `learning_stats`,
   per-project rollups, recent decisions, skill usage counts, skill
-  engagement (fetched vs. referenced), tech-stack usage, and the token
-  savings math for `token_report`. Nothing here writes, and now nothing here
-  *can*.
+  engagement (fetched vs. referenced), tech-stack usage from worklog text,
+  tech-stack usage from scanned git history, and the token savings math for
+  `token_report`. Nothing here writes, and now nothing here *can*.
 - `web/app.py` — a FastAPI app exposing the same `analytics_store` queries
   as JSON over HTTP, and serving `static/` (the dashboard). A second,
   read-only entry point onto `data/enablement.db` — it never writes.
@@ -49,8 +53,8 @@ reasoning behind key choices.
   workflows. See "Subagents" below.
 - `data/enablement.db` — SQLite database: `skill_usage` (now with `chars`/
   `tokens_est` columns), `projects`, `sessions`, `worklog`, `decisions`,
-  `library_snapshots` (created automatically on first run of the MCP
-  server). Not checked into git.
+  `library_snapshots`, `repo_tech_scans` (created automatically on first run
+  of the MCP server). Not checked into git.
 - `docs/` — the build plans and the decision log.
 
 ## Setup
@@ -103,13 +107,15 @@ All under `/api/`, all `GET`, all read-only, all reusing `analytics_store.py`:
 | `/api/token-report?period=weekly\|monthly` | Same numbers as the `token_report` MCP tool (omit `period` for cumulative) |
 | `/api/skill-engagement` | Every skill in the library with its fetched/referenced-only/neither status (dashboard-only, no MCP tool -- same precedent as `/api/skills`) |
 | `/api/tech-stack` | Programming languages/technologies (Python, SQL, C#, C++, ...) detected in worklog text, with a per-entry mention count (dashboard-only) |
+| `/api/repo-tech-stack` | Programming languages/technologies found by scanning actual git repository history (see `scan_project_tech_stack`), with a file count per language, summed across every project scanned (dashboard-only) |
 
 ### Dashboard sections
 
 A prominent **token savings** card (headline percentage + a weekly/monthly/
 all-time comparison chart) right at the top → recap stat cards (with the
 weekly/monthly toggle) → activity charts (time per project, skill fetch
-counts, and languages/tech mentioned in worklog text) → **all skills**
+counts, languages/tech mentioned in worklog text, and languages/tech found by
+scanning actual git history) → **all skills**
 (every skill in the library as a chip, showing fetched/referenced-only/
 neither for the whole library, not just one path) → learning-path progress
 ("N of M `product-manager`-track skills engaged with", with the same three
@@ -139,6 +145,25 @@ Both calls record a row in `skill_usage` (`listed` or `fetched`).
   auto-create/reuse for the project and session as `log_work`, but does
   **not** close the session — a session can hold many decisions before
   the `log_work` call that eventually wraps it up.
+- **`scan_project_tech_stack(project_name, repo_path)`** — scans a local git
+  repository's commit history for source files by extension and records the
+  result as that project's tech-stack signal, replacing any previous scan.
+  `repo_path` must be a path to a real git repo (with at least one commit)
+  reachable from wherever this MCP server is actually running — which is the
+  point: run it against whatever project you're standing in front of, even
+  one whose worklog entries never happen to spell out a language by name.
+
+### Tech stack: two independent signals, not one
+
+`tech_stack.py` (worklog-text keyword matching, from an earlier session) and
+`repo_tech_store.py` (`scan_project_tech_stack`, this one) answer different
+questions and are surfaced as two separate dashboard charts, not merged into
+one: "how often did a language come up in what you *wrote about* your work"
+vs. "how much of the actual *codebase* is in each language." A project whose
+worklog says "built the dashboard" without ever spelling out "Python" or
+"JavaScript" still has a precise, structural answer sitting in its own git
+history — this tool reads that trail directly instead of depending on how a
+summary happened to be worded. See `docs/decision-log.md`.
 
 ### How time is derived
 
