@@ -246,6 +246,23 @@
     } catch (err) {
       renderError(document.getElementById("chart-grid"), err.message);
     }
+
+    try {
+      const techStack = await fetchJson("/api/tech-stack");
+      if (techStack.length === 0) {
+        document.getElementById("chart-tech-stack").closest(".chart-card").innerHTML =
+          '<h3>Languages &amp; tech mentioned</h3><div class="empty-state">No languages or technologies detected in worklog text yet.</div>';
+      } else {
+        renderBarChart(
+          "chart-tech-stack",
+          techStack.map((t) => t.name),
+          techStack.map((t) => t.mention_count),
+          "Worklog entries mentioning"
+        );
+      }
+    } catch (err) {
+      renderError(document.getElementById("chart-grid"), err.message);
+    }
   }
 
   async function loadLearningPath() {

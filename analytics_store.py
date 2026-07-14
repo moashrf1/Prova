@@ -25,6 +25,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import skills_store
+import tech_stack
 import token_metrics
 
 DB_PATH = Path(__file__).parent / "data" / "enablement.db"
@@ -458,3 +459,25 @@ def compute_token_report(period: str | None = None, now: datetime | None = None)
         "saving_pct": saving_pct,
         "label": "context content tokens (estimated), not client-billed API tokens",
     }
+
+
+def tech_stack_usage() -> list[dict]:
+    """How many worklog entries mention each detected language/technology
+    (see tech_stack.py) -- counts entries, not raw text occurrences, so an
+    entry that says "Python" three times still counts once. Only languages
+    mentioned at least once are returned (unlike skill_usage_counts, which
+    intentionally includes zero-fetch skills): the vocabulary here is much
+    broader than the 6-skill library, so listing every unmentioned language
+    would clutter a chart rather than inform one."""
+    with db_connection() as conn:
+        rows = conn.execute("SELECT tasks, COALESCE(learnings, '') FROM worklog").fetchall()
+
+    counts: dict[str, int] = {}
+    for tasks, learnings in rows:
+        for name in tech_stack.mentioned_languages(f"{tasks} {learnings}"):
+            counts[name] = counts.get(name, 0) + 1
+
+    return [
+        {"name": name, "mention_count": count}
+        for name, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
