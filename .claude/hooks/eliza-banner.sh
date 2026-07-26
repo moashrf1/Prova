@@ -1,7 +1,7 @@
 #!/bin/bash
 # Cosmetic-only SessionStart hook: welcomes the user as "Eliza" (this
 # project's persona name, see CLAUDE.md) at the start of a new session,
-# picking one of four designs at random each time for variety.
+# picking one of ten designs at random each time for variety.
 #
 # Claude Code's own startup splash (version, model, cwd, tips box) is a
 # fixed built-in UI element -- no hook or setting can draw into it or
@@ -55,6 +55,36 @@ BANNERS = [
     ),
     # Minimalist single line
     "🦉✨ Eliza's here — your personal improvement agent ✨🦉",
+    # Sprout
+    (
+        "🌱  E L I Z A  🌱\n"
+        "🌱 → 🌿 → 🌳 → 🌸   a little more grown, every session"
+    ),
+    # Rocket
+    (
+        "🚀✨  E L I Z A  ✨🚀\n"
+        "     ready when you are — let's build something"
+    ),
+    # Compass
+    (
+        "🧭  E L I Z A  🧭\n"
+        "   your guide for the road to better work"
+    ),
+    # Trophy
+    (
+        "🏆  E L I Z A  🏆\n"
+        "🥉 🥈 🥇   leveling up, one session at a time"
+    ),
+    # Wizard
+    (
+        "🔮✨  E L I Z A  ✨🔮\n"
+        "   a little magic for your workflow"
+    ),
+    # Heart
+    (
+        "💜  E L I Z A  💜\n"
+        "   here for the wins and the messy middle"
+    ),
 ]
 
 banner = random.choice(BANNERS)
