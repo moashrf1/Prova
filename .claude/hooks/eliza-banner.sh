@@ -1,6 +1,7 @@
 #!/bin/bash
 # Cosmetic-only SessionStart hook: welcomes the user as "Eliza" (this
-# project's persona name, see CLAUDE.md) at the start of a new session.
+# project's persona name, see CLAUDE.md) at the start of a new session,
+# picking one of four designs at random each time for variety.
 #
 # Claude Code's own startup splash (version, model, cwd, tips box) is a
 # fixed built-in UI element -- no hook or setting can draw into it or
@@ -20,21 +21,43 @@
 #
 # Color comes from emoji glyphs, not ANSI escapes: terminals render emoji
 # in full color via their own emoji font regardless of ANSI support, which
-# is a much more reliable way to get a "colorful" banner than escape codes
-# (which the box-lettered first version of this hook proved don't survive
-# the additionalContext -> reply round trip visually anyway once inside a
-# code fence). The owl mascot fits "Eliza" as a personal-improvement/
-# mentor persona.
+# is far more reliable here than color codes. The boxed design's interior
+# padding was hand-computed with wcwidth (double-width emoji accounted
+# for) during development so its borders line up -- the shipped hook has
+# no such runtime dependency, only the already-verified literal strings.
 
 python3 - <<'PYEOF'
 import json
+import random
 
-BANNER = (
-    "✨🦉✨  E L I Z A  ✨🦉✨\n"
-    "🟥🟧🟨🟩🟦🟪🟪🟦🟩🟨🟧🟥\n"
-    "   your personal improvement agent\n"
-    "🟥🟧🟨🟩🟦🟪🟪🟦🟩🟨🟧🟥"
-)
+BANNERS = [
+    # Owl mascot
+    (
+        "✨🦉✨  E L I Z A  ✨🦉✨\n"
+        "🟥🟧🟨🟩🟦🟪🟪🟦🟩🟨🟧🟥\n"
+        "   your personal improvement agent\n"
+        "🟥🟧🟨🟩🟦🟪🟪🟦🟩🟨🟧🟥"
+    ),
+    # Growth / progress theme
+    (
+        "📈  E L I Z A  📈\n"
+        "▁▂▃▄▅▆▇█  growing a little more, every session  █▇▆▅▄▃▂▁"
+    ),
+    # Boxed + colorful (interior padding hand-verified with wcwidth for
+    # double-width emoji, so the borders line up)
+    (
+        "╔════════════════════════════════════════════════╗\n"
+        "║                                                ║\n"
+        "║             ✨🌟  E L I Z A  🌟✨              ║\n"
+        "║  🟪🟦🟩🟨🟧🟥 improvement agent 🟥🟧🟨🟩🟦🟪   ║\n"
+        "║                                                ║\n"
+        "╚════════════════════════════════════════════════╝"
+    ),
+    # Minimalist single line
+    "🦉✨ Eliza's here — your personal improvement agent ✨🦉",
+]
+
+banner = random.choice(BANNERS)
 
 instruction = (
     "This is the start of a brand-new Claude Code session in a project "
@@ -43,7 +66,7 @@ instruction = (
     "reply with exactly this welcome banner in its own fenced code block "
     "(so it renders unmodified, one line per line), then respond to the "
     "user's actual message normally below it:\n\n"
-    f"```\n{BANNER}\n```\n\n"
+    f"```\n{banner}\n```\n\n"
     "Only do this once, for the very first reply of the session -- not on "
     "later turns."
 )
