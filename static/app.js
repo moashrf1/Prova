@@ -13,6 +13,7 @@
   const projectsContainer = document.getElementById("projects-container");
   const decisionsContainer = document.getElementById("decisions-container");
   const tokenSavingsContainer = document.getElementById("token-savings-container");
+  const skillInsightsContainer = document.getElementById("skill-insights-container");
 
   const style = getComputedStyle(document.documentElement);
   const cssVar = (name) => style.getPropertyValue(name).trim();
@@ -341,6 +342,66 @@
     }
   }
 
+  async function loadSkillInsights() {
+    try {
+      const insights = await fetchJson("/api/skill-insights");
+      const hasAnything =
+        insights.technologies.length > 0 || insights.skills.length > 0;
+      if (!hasAnything) {
+        skillInsightsContainer.innerHTML =
+          '<div class="empty-state">No skill or technology signals yet -- log some work, or scan a project with scan_project_tech_stack.</div>';
+        return;
+      }
+
+      const techChartHtml =
+        insights.technologies.length > 0
+          ? '<div class="insights-chart-wrap"><canvas id="chart-skill-insights-tech" role="img" aria-label="Bar chart of the most-used technologies, combining worklog mentions and git history file counts"></canvas></div>'
+          : '<div class="empty-state">No technologies detected yet.</div>';
+
+      const skillChips = insights.skills
+        .map((s) => {
+          const cls = s.kind === "non-technical" ? "is-non-technical" : s.fetched ? "is-fetched" : "";
+          const kindLabel = s.kind === "non-technical" ? "non-technical" : "technical";
+          const title = `${kindLabel} · in ${s.distinct_project_count} project(s)`;
+          return `<span class="skill-chip ${cls}" title="${title}">${s.title}</span>`;
+        })
+        .join("");
+
+      const suggestedChips = insights.suggested_next
+        .map((name) => `<span class="skill-chip">${name}</span>`)
+        .join("");
+
+      skillInsightsContainer.innerHTML = `
+        <div class="path-card">
+          <div class="insights-subheading">Most-used technologies (worklog mentions + git history, combined)</div>
+          ${techChartHtml}
+          <div class="insights-subheading">Top skills &mdash; technical and non-technical</div>
+          ${
+            skillChips
+              ? `<div class="skill-chip-list">${skillChips}</div>`
+              : '<div class="empty-state">No skills engaged with yet.</div>'
+          }
+          <div class="insights-subheading">Suggested next</div>
+          ${
+            suggestedChips
+              ? `<div class="skill-chip-list">${suggestedChips}</div>`
+              : '<div class="empty-state">Every library skill has been engaged with.</div>'
+          }
+        </div>`;
+
+      if (insights.technologies.length > 0) {
+        renderBarChart(
+          "chart-skill-insights-tech",
+          insights.technologies.map((t) => t.name),
+          insights.technologies.map((t) => t.combined_score),
+          "Combined usage score"
+        );
+      }
+    } catch (err) {
+      renderError(skillInsightsContainer, err.message);
+    }
+  }
+
   async function loadProjects() {
     try {
       const projects = await fetchJson("/api/projects");
@@ -405,6 +466,7 @@
 
   loadRecap("weekly");
   loadCharts();
+  loadSkillInsights();
   loadAllSkills();
   loadLearningPath();
   loadProjects();

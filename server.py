@@ -89,6 +89,21 @@ def scan_project_tech_stack(project_name: str, repo_path: str) -> list[dict]:
 
 
 @mcp.tool()
+def scan_all_projects() -> list[dict]:
+    """Rescan every project previously scanned via scan_project_tech_stack,
+    without needing to name each repo_path again -- the actual "watch my
+    projects" capability, once at least one project has been scanned the
+    first time.
+
+    Returns one entry per watched project: its language/file_count
+    breakdown, or an "error" field if its repo_path no longer exists (a
+    stale path for one project doesn't block getting fresh data for the
+    rest).
+    """
+    return repo_tech_store.scan_all_watched_projects()
+
+
+@mcp.tool()
 def learning_stats(path: str | None = None) -> dict:
     """Cumulative, all-time progress: total skills fetched, decisions, sessions.
 

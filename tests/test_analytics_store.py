@@ -570,3 +570,104 @@ def test_repo_tech_stack_usage_sums_across_projects(isolated_analytics):
 
 def test_repo_tech_stack_usage_empty_when_no_scans(isolated_analytics):
     assert analytics_store.repo_tech_stack_usage() == []
+
+
+def test_soft_skills_usage_counts_entries_not_raw_occurrences(isolated_analytics):
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+
+    session_id = seed_session(db_path, "proj", ts(now, 1), ts(now, 1, hours=1))
+    seed_worklog(
+        db_path,
+        session_id,
+        "communicated the plan and presented to stakeholders",
+        ts(now, 1, hours=1),
+        learnings="communicated again with the wider team",
+    )
+
+    usage = {u["name"]: u["mention_count"] for u in analytics_store.soft_skills_usage()}
+
+    assert usage["Communication"] == 1
+
+
+def test_soft_skills_usage_empty_when_no_worklog(isolated_analytics):
+    assert analytics_store.soft_skills_usage() == []
+
+
+def test_skill_insights_combines_worklog_and_repo_technology_signals(isolated_analytics):
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+
+    session_id = seed_session(db_path, "proj", ts(now, 1), ts(now, 1, hours=1))
+    seed_worklog(db_path, session_id, "wrote a python script", ts(now, 1, hours=1))
+    seed_repo_scan(db_path, "proj", "Python", 10)
+
+    insights = analytics_store.skill_insights()
+
+    technologies = {t["name"]: t["combined_score"] for t in insights["technologies"]}
+    assert technologies["Python"] == 11  # 1 worklog mention + 10 files
+
+
+def test_skill_insights_skills_include_distinct_project_count(isolated_analytics):
+    db_path = isolated_analytics
+    skills_dir = db_path.parent.parent / "skills"
+    now = datetime.utcnow()
+
+    write_skill(skills_dir, "a.md", "skill-a", "test-path", tags="[alpha, apple]")
+
+    session_a = seed_session(db_path, "proj-a", ts(now, 1), ts(now, 1, hours=1))
+    seed_worklog(db_path, session_a, "Applied the alpha technique with an apple analogy.", ts(now, 1, hours=1))
+    session_b = seed_session(db_path, "proj-b", ts(now, 2), ts(now, 2, hours=1))
+    seed_worklog(db_path, session_b, "Applied the alpha technique with an apple analogy again.", ts(now, 2, hours=1))
+
+    insights = analytics_store.skill_insights()
+
+    by_name = {s["name"]: s for s in insights["skills"]}
+    assert by_name["skill-a"]["distinct_project_count"] == 2
+    assert by_name["skill-a"]["kind"] == "technical"
+    assert by_name["skill-a"]["fetched"] is False
+
+
+def test_skill_insights_includes_soft_skills_alongside_library_skills(isolated_analytics):
+    db_path = isolated_analytics
+    now = datetime.utcnow()
+
+    session_id = seed_session(db_path, "proj", ts(now, 1), ts(now, 1, hours=1))
+    seed_worklog(
+        db_path,
+        session_id,
+        "mentored a junior engineer and coached them through onboarding",
+        ts(now, 1, hours=1),
+    )
+
+    insights = analytics_store.skill_insights()
+
+    by_name = {s["name"]: s for s in insights["skills"]}
+    assert by_name["Mentoring"]["kind"] == "non-technical"
+    assert by_name["Mentoring"]["distinct_project_count"] == 1
+    assert by_name["Mentoring"]["mention_count"] == 1
+
+
+def test_skill_insights_suggested_next_excludes_engaged_skills(isolated_analytics):
+    db_path = isolated_analytics
+    skills_dir = db_path.parent.parent / "skills"
+    now = datetime.utcnow()
+
+    write_skill(skills_dir, "a.md", "skill-a", "test-path", tags="[alpha, apple]")
+    write_skill(skills_dir, "b.md", "skill-b", "test-path", tags="[beta, banana]")
+
+    session_id = seed_session(db_path, "proj", ts(now, 1), ts(now, 1, hours=1))
+    seed_worklog(db_path, session_id, "Applied the alpha technique with an apple analogy.", ts(now, 1, hours=1))
+
+    insights = analytics_store.skill_insights()
+
+    assert "skill-a" not in insights["suggested_next"]
+    assert "skill-b" in insights["suggested_next"]
+
+
+def test_skill_insights_empty_state(isolated_analytics):
+    insights = analytics_store.skill_insights()
+
+    assert insights["technologies"] == []
+    assert insights["skills"] == []
+    assert sorted(insights["suggested_next"]) == ["skill-a", "skill-b", "skill-c"]

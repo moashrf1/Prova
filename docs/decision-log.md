@@ -4,6 +4,78 @@ Authorship and reasoning record for the AI Enablement System build, per the
 "full authorship evidence from commit #1" guardrail. One entry per meaningful
 decision, newest first.
 
+## 2026-07-29 — Skill Insights: a synthesized view, plus the pieces it needed (soft skills, multi-project watching)
+
+**Context:** direct user feedback that the system was "almost useless" --
+every analytics view up to this point was purely descriptive (a count, a
+fetch total, a fetched/referenced flag) and required manually combining
+four separate signals to answer the actual question a personal-improvement
+agent should answer directly: what have I actually used and gotten good
+at, including skills that aren't programming languages, and across every
+project I'm working on, not just the one I happen to be logging into this
+system.
+
+**Decision:** built three complementary pieces, in this order, because
+each one is a real dependency of the next:
+
+1. **`soft_skills.py`** -- a non-technical skills detector, structurally
+   identical to `tech_stack.py` (deterministic keyword matching, no LLM),
+   against a fixed vocabulary of general professional skills
+   (communication, leadership, mentoring, negotiation, prioritization,
+   conflict resolution, time management, stakeholder management) chosen
+   to be broadly useful regardless of role, rather than narrowly tied to
+   the three existing product-manager skill files. Same precision
+   safeguard as `skills_store.classify_skills_in_text`: at least 2
+   distinct keyword phrases per skill, not 1, to avoid a single
+   coincidental word producing a false match.
+2. **Multi-project watching** (`watched_projects` table,
+   `scan_all_watched_projects()`, the `scan_all_projects` MCP tool) --
+   `scan_project_tech_stack` already existed but required naming one
+   repo_path by hand every single time, for every project, which doesn't
+   scale to "watch my projects" as an ongoing capability. `record_repo_scan`
+   now also registers (project_id, repo_path) on every scan, so the first
+   manual scan of a project is the only registration step ever needed;
+   `scan_all_projects` rescans everything registered in one call. A
+   missing/moved path is reported as an `error` for that one project
+   rather than aborting the whole batch -- one stale project shouldn't
+   block getting fresh data for the rest.
+3. **`skill_insights()`** -- the actual synthesis, combining
+   `tech_stack_usage`, `repo_tech_stack_usage`, `skill_engagement_overview`,
+   and the new `soft_skills_usage` into one payload: a combined technology
+   score (worklog mentions + repo file count, added rather than picked
+   between), every engaged skill (technical and non-technical) annotated
+   with `distinct_project_count`, and a `suggested_next` list of untouched
+   library skills.
+
+**Why distinct-project-count as the importance signal, not just a raw
+mention count:** a skill used across three different projects has proven
+itself more broadly transferable/foundational than one used ten times in
+a single project, even though the raw count alone wouldn't show that
+difference. This required joining worklog through sessions to projects
+specifically for `skill_insights()` rather than modifying the existing,
+already-shipped `tech_stack_usage`/`repo_tech_stack_usage` functions --
+kept those two untouched (same tested return shape, same dashboard
+consumers) and added the project-diversity computation as `skill_insights`'s
+own internal query instead, avoiding any regression risk to code that
+already worked.
+
+**Every number stays a plain count, sum, or set-size of an existing,
+already-auditable signal** -- no hidden weighting formula, no LLM judgment
+call dressed up as "smart." Consistent with this project's whole
+dependency-light philosophy (`token_metrics.py`'s chars/4 heuristic, both
+text classifiers) -- being "smarter" here means synthesizing existing
+honest signals into one place, not introducing a black box.
+
+**Dashboard:** a new **Skill Insights** section, placed directly under the
+Token Savings card (before the plain Recap stat cards) since this is meant
+to be the headline, at-a-glance answer -- not one more chart added to the
+bottom of an already-long page. The four existing granular charts stay
+exactly where they were; Skill Insights synthesizes on top of them, it
+doesn't replace them, consistent with this project's repeated precedent of
+keeping distinct signals separately visible (fetched vs. referenced,
+worklog-text vs. git-history) rather than blurring them into one
+number with no way to see the underlying parts.
+
 ## 2026-07-14 — Repo tech-stack scanning: a structural signal alongside the worklog-text one, not a replacement
 
 **Context:** the worklog-text tech-stack chart (`tech_stack.py`) only detects

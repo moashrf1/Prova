@@ -75,6 +75,16 @@ def get_repo_tech_stack():
     return _run_readonly(analytics_store.repo_tech_stack_usage)
 
 
+@app.get("/api/soft-skills")
+def get_soft_skills():
+    return _run_readonly(analytics_store.soft_skills_usage)
+
+
+@app.get("/api/skill-insights")
+def get_skill_insights():
+    return _run_readonly(analytics_store.skill_insights)
+
+
 @app.get("/api/token-report")
 def get_token_report(period: str | None = None):
     if period is not None and period not in analytics_store.PERIOD_WINDOWS:

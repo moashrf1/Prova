@@ -239,3 +239,46 @@ def test_repo_tech_stack_endpoint_empty_when_no_scans(client):
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_soft_skills_endpoint_matches_analytics_store(client):
+    with sqlite3.connect(work_store.DB_PATH) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("INSERT INTO projects (name) VALUES ('proj-soft')")
+        pid = conn.execute("SELECT id FROM projects WHERE name='proj-soft'").fetchone()[0]
+        conn.execute(
+            "INSERT INTO sessions (project_id, started_at, ended_at) VALUES "
+            "(?, datetime('now'), datetime('now'))",
+            (pid,),
+        )
+        sid = conn.execute("SELECT id FROM sessions").fetchone()[0]
+        conn.execute(
+            "INSERT INTO worklog (session_id, tasks) VALUES "
+            "(?, 'mentored a junior engineer and coached them')",
+            (sid,),
+        )
+        conn.commit()
+
+    response = client.get("/api/soft-skills")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == analytics_store.soft_skills_usage()
+    assert {u["name"] for u in body} == {"Mentoring"}
+
+
+def test_soft_skills_endpoint_empty_when_no_worklog(client):
+    response = client.get("/api/soft-skills")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_skill_insights_endpoint_matches_analytics_store(client):
+    response = client.get("/api/skill-insights")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == analytics_store.skill_insights()
+    assert set(body.keys()) == {"technologies", "skills", "suggested_next"}
+    assert body["suggested_next"] == ["skill-a"]

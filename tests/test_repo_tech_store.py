@@ -121,3 +121,90 @@ def test_record_repo_scan_auto_creates_project(tmp_path, isolated_repo_tech_stor
     with sqlite3.connect(isolated_repo_tech_store) as conn:
         names = {r[0] for r in conn.execute("SELECT name FROM projects").fetchall()}
     assert "brand-new-project" in names
+
+
+def test_record_repo_scan_registers_watched_project(tmp_path, isolated_repo_tech_store):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    make_git_repo(repo, {"a.py": "1"})
+
+    repo_tech_store.record_repo_scan("demo-project", str(repo))
+
+    with sqlite3.connect(isolated_repo_tech_store) as conn:
+        row = conn.execute(
+            "SELECT repo_path FROM watched_projects WHERE project_id = "
+            "(SELECT id FROM projects WHERE name = 'demo-project')"
+        ).fetchone()
+    assert row == (str(repo),)
+
+
+def test_record_repo_scan_rescan_updates_watched_project_path(tmp_path, isolated_repo_tech_store):
+    repo_a = tmp_path / "repo_a"
+    repo_a.mkdir()
+    make_git_repo(repo_a, {"a.py": "1"})
+    repo_tech_store.record_repo_scan("demo-project", str(repo_a))
+
+    repo_b = tmp_path / "repo_b"
+    repo_b.mkdir()
+    make_git_repo(repo_b, {"b.py": "1"})
+    repo_tech_store.record_repo_scan("demo-project", str(repo_b))
+
+    with sqlite3.connect(isolated_repo_tech_store) as conn:
+        rows = conn.execute("SELECT repo_path FROM watched_projects").fetchall()
+    assert rows == [(str(repo_b),)]  # one row, updated in place -- not a duplicate
+
+
+def test_scan_all_watched_projects_rescans_every_registered_project(tmp_path, isolated_repo_tech_store):
+    repo_a = tmp_path / "repo_a"
+    repo_a.mkdir()
+    make_git_repo(repo_a, {"a.py": "1"})
+    repo_tech_store.record_repo_scan("project-a", str(repo_a))
+
+    repo_b = tmp_path / "repo_b"
+    repo_b.mkdir()
+    make_git_repo(repo_b, {"b.js": "1"})
+    repo_tech_store.record_repo_scan("project-b", str(repo_b))
+
+    # Add a new file to project-a's repo since its scan, to prove the
+    # rescan reflects current state rather than replaying stale results
+    (repo_a / "c.sql").write_text("SELECT 1")
+    subprocess.run(["git", "add", "-A"], cwd=repo_a, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "add sql file"], cwd=repo_a, check=True)
+
+    results = repo_tech_store.scan_all_watched_projects()
+
+    by_project = {r["project"]: r for r in results}
+    assert set(by_project) == {"project-a", "project-b"}
+    assert by_project["project-a"]["languages"] == [
+        {"name": "Python", "file_count": 1},
+        {"name": "SQL", "file_count": 1},
+    ]
+    assert by_project["project-b"]["languages"] == [{"name": "JavaScript", "file_count": 1}]
+
+
+def test_scan_all_watched_projects_reports_error_for_missing_path_without_aborting(
+    tmp_path, isolated_repo_tech_store
+):
+    repo_a = tmp_path / "repo_a"
+    repo_a.mkdir()
+    make_git_repo(repo_a, {"a.py": "1"})
+    repo_tech_store.record_repo_scan("project-a", str(repo_a))
+
+    missing_path = str(tmp_path / "does-not-exist")
+    with sqlite3.connect(isolated_repo_tech_store) as conn:
+        conn.execute("INSERT INTO projects (name) VALUES ('project-missing')")
+        pid = conn.execute("SELECT id FROM projects WHERE name = 'project-missing'").fetchone()[0]
+        conn.execute(
+            "INSERT INTO watched_projects (project_id, repo_path) VALUES (?, ?)",
+            (pid, missing_path),
+        )
+
+    results = repo_tech_store.scan_all_watched_projects()
+
+    by_project = {r["project"]: r for r in results}
+    assert "languages" in by_project["project-a"]  # unaffected by the other project's failure
+    assert "error" in by_project["project-missing"]
+
+
+def test_scan_all_watched_projects_empty_when_nothing_registered(isolated_repo_tech_store):
+    assert repo_tech_store.scan_all_watched_projects() == []

@@ -74,6 +74,15 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS watched_projects (
+                project_id      INTEGER PRIMARY KEY REFERENCES projects(id),
+                repo_path       TEXT NOT NULL,
+                last_scanned_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
 
 
 def scan_git_repo(repo_path: str) -> dict[str, int]:
@@ -117,7 +126,12 @@ def _get_or_create_project_id(conn: sqlite3.Connection, project_name: str) -> in
 def record_repo_scan(project_name: str, repo_path: str) -> list[dict]:
     """Scan repo_path and replace any previous scan recorded for this
     project -- a rescan reflects the repo's current history, it doesn't
-    accumulate a duplicate row set on top of the last scan."""
+    accumulate a duplicate row set on top of the last scan.
+
+    Also registers (project_id, repo_path) in watched_projects, so a
+    single manual scan is all that's needed to make a project eligible
+    for scan_all_watched_projects() from then on -- there's no separate
+    "register this project" step to remember."""
     counts = scan_git_repo(repo_path)
 
     with db_connection() as conn:
@@ -129,8 +143,43 @@ def record_repo_scan(project_name: str, repo_path: str) -> list[dict]:
                 "VALUES (?, ?, ?)",
                 (project_id, language, file_count),
             )
+        conn.execute(
+            "INSERT INTO watched_projects (project_id, repo_path, last_scanned_at) "
+            "VALUES (?, ?, datetime('now')) "
+            "ON CONFLICT(project_id) DO UPDATE SET "
+            "repo_path = excluded.repo_path, last_scanned_at = excluded.last_scanned_at",
+            (project_id, repo_path),
+        )
 
     return [
         {"name": language, "file_count": count}
         for language, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
     ]
+
+
+def scan_all_watched_projects() -> list[dict]:
+    """Rescan every project previously registered via record_repo_scan,
+    without needing to name each repo_path again.
+
+    A path that's moved or been deleted since its last scan is reported
+    as an error for that one project rather than aborting the whole
+    batch -- one stale project shouldn't block getting fresh data for
+    everything else being watched."""
+    with db_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT projects.name, watched_projects.repo_path
+            FROM watched_projects
+            JOIN projects ON projects.id = watched_projects.project_id
+            """
+        ).fetchall()
+
+    results = []
+    for project_name, repo_path in rows:
+        try:
+            languages = record_repo_scan(project_name, repo_path)
+            results.append({"project": project_name, "repo_path": repo_path, "languages": languages})
+        except ValueError as exc:
+            results.append({"project": project_name, "repo_path": repo_path, "error": str(exc)})
+
+    return results

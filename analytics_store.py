@@ -25,6 +25,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import skills_store
+import soft_skills
 import tech_stack
 import token_metrics
 
@@ -498,3 +499,140 @@ def tech_stack_usage() -> list[dict]:
         {"name": name, "mention_count": count}
         for name, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
     ]
+
+
+def soft_skills_usage() -> list[dict]:
+    """How many worklog entries evidence each detected non-technical skill
+    (see soft_skills.py) -- same "count entries, not raw occurrences"
+    convention as tech_stack_usage, applied to a professional-skills
+    vocabulary instead of a language one."""
+    with db_connection() as conn:
+        rows = conn.execute("SELECT tasks, COALESCE(learnings, '') FROM worklog").fetchall()
+
+    counts: dict[str, int] = {}
+    for tasks, learnings in rows:
+        for name in soft_skills.mentioned_soft_skills(f"{tasks} {learnings}"):
+            counts[name] = counts.get(name, 0) + 1
+
+    return [
+        {"name": name, "mention_count": count}
+        for name, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
+
+
+def _worklog_rows_with_project() -> list[tuple[int, str]]:
+    """Every worklog entry's (project_id, combined tasks+learnings text) --
+    the shared join skill_insights() uses to work out how many *distinct
+    projects* each technology/skill shows up in, not just a raw mention
+    count. Project diversity is what makes a skill "foundational" rather
+    than a one-off: something used across three different projects has
+    proven itself more broadly transferable than something used ten times
+    in only one."""
+    with db_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT sessions.project_id, worklog.tasks, COALESCE(worklog.learnings, '')
+            FROM worklog
+            JOIN sessions ON sessions.id = worklog.session_id
+            """
+        ).fetchall()
+    return [(project_id, f"{tasks} {learnings}") for project_id, tasks, learnings in rows]
+
+
+def skill_insights() -> dict:
+    """One combined view over every skill/technology signal this system
+    tracks, instead of four separate charts a reader has to mentally
+    merge themselves:
+
+    - technologies: tech_stack_usage (worklog wording) and
+      repo_tech_stack_usage (actual git history) summed into one
+      combined_score per language -- two complementary proxies for "how
+      much you use this," added together rather than picked between.
+    - skills: every curated library skill's engagement status (fetched/
+      referenced, from skill_engagement_overview) plus every detected
+      soft skill, each annotated with distinct_project_count -- how many
+      different projects' worklog entries evidence it, the "foundational,
+      not just heavily used once" signal.
+    - suggested_next: library skills neither fetched nor referenced
+      anywhere yet -- the most direct, literal answer to "what haven't I
+      touched."
+
+    Every number here is a plain count or sum of existing signals -- no
+    hidden weighting beyond what's documented, so the ranking stays
+    auditable by hand, consistent with this project's whole
+    dependency-light philosophy.
+    """
+    worklog_rows = _worklog_rows_with_project()
+
+    tech_scores: dict[str, int] = {}
+    for entry in tech_stack_usage():
+        tech_scores[entry["name"]] = tech_scores.get(entry["name"], 0) + entry["mention_count"]
+    for entry in repo_tech_stack_usage():
+        tech_scores[entry["name"]] = tech_scores.get(entry["name"], 0) + entry["file_count"]
+
+    technologies = [
+        {"name": name, "combined_score": score}
+        for name, score in sorted(tech_scores.items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
+
+    soft_skill_projects: dict[str, set[int]] = {}
+    soft_skill_mentions: dict[str, int] = {}
+    for project_id, text in worklog_rows:
+        for name in soft_skills.mentioned_soft_skills(text):
+            soft_skill_projects.setdefault(name, set()).add(project_id)
+            soft_skill_mentions[name] = soft_skill_mentions.get(name, 0) + 1
+
+    all_skills = skills_store.load_all_skills()
+    valid_names = {s["name"] for s in all_skills}
+    with db_connection() as conn:
+        fetched_names = {
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT skill_name FROM skill_usage WHERE action = 'fetched'"
+            ).fetchall()
+        }
+    fetched_names &= valid_names
+    referenced_names = skills_referenced_in_worklog() & valid_names
+
+    library_skill_projects: dict[str, set[int]] = {}
+    for project_id, text in worklog_rows:
+        for name in skills_store.classify_skills_in_text(text):
+            library_skill_projects.setdefault(name, set()).add(project_id)
+
+    skills = []
+    for skill in all_skills:
+        name = skill["name"]
+        engaged = name in fetched_names or name in referenced_names
+        if not engaged:
+            continue
+        skills.append(
+            {
+                "name": name,
+                "title": skill["title"],
+                "kind": "technical" if skill["category"] == "technical" else "non-technical",
+                "fetched": name in fetched_names,
+                "distinct_project_count": len(library_skill_projects.get(name, set())),
+            }
+        )
+    for name, mention_count in soft_skill_mentions.items():
+        skills.append(
+            {
+                "name": name,
+                "title": name,
+                "kind": "non-technical",
+                "fetched": False,
+                "distinct_project_count": len(soft_skill_projects[name]),
+                "mention_count": mention_count,
+            }
+        )
+    skills.sort(key=lambda s: (-s["distinct_project_count"], s["name"]))
+
+    suggested_next = sorted(
+        s["name"] for s in all_skills if s["name"] not in fetched_names and s["name"] not in referenced_names
+    )
+
+    return {
+        "technologies": technologies,
+        "skills": skills,
+        "suggested_next": suggested_next,
+    }

@@ -14,10 +14,10 @@ reasoning behind key choices.
 
 ## What's here
 
-- `server.py` — the MCP server (FastMCP, from the `mcp` SDK). Exposes eight
+- `server.py` — the MCP server (FastMCP, from the `mcp` SDK). Exposes nine
   tools: `list_skills`, `get_skill`, `log_work`, `log_decision`,
-  `scan_project_tech_stack`, `generate_recap`, `learning_stats`,
-  `token_report`. **The only write path** onto the data.
+  `scan_project_tech_stack`, `scan_all_projects`, `generate_recap`,
+  `learning_stats`, `token_report`. **The only write path** onto the data.
 - `token_metrics.py` — the single shared token-estimation heuristic
   (`chars // 4`) every call site routes through.
 - `skills_store.py` — reads skill markdown files from `skills/`, logs usage
@@ -32,14 +32,24 @@ reasoning behind key choices.
 - `repo_tech_store.py` — a different, structural tech-stack signal: scans a
   local git repository's own commit history for source files by extension
   (`.py` → Python, `.sql` → SQL, ...), independent of how any worklog entry
-  happened to be worded. Writes to its own `repo_tech_scans` table.
+  happened to be worded. Writes to its own `repo_tech_scans` table, and
+  registers every scanned project in `watched_projects` so
+  `scan_all_projects` can rescan all of them without being told each
+  repo_path again.
+- `soft_skills.py` — the non-technical counterpart to `tech_stack.py`: same
+  deterministic keyword-matching approach, but against a fixed vocabulary
+  of professional/soft skills (communication, leadership, mentoring,
+  negotiation, prioritization, conflict resolution, time management,
+  stakeholder management) detected in worklog text.
 - `analytics_store.py` — read-only queries over the accumulated data
   (every connection opens SQLite in `mode=ro`): temporal aggregates for
   `generate_recap`, cumulative/path-aware stats for `learning_stats`,
   per-project rollups, recent decisions, skill usage counts, skill
   engagement (fetched vs. referenced), tech-stack usage from worklog text,
-  tech-stack usage from scanned git history, and the token savings math for
-  `token_report`. Nothing here writes, and now nothing here *can*.
+  tech-stack usage from scanned git history, soft-skills usage, a unified
+  `skill_insights()` combining all of the above, and the token savings
+  math for `token_report`. Nothing here writes, and now nothing here
+  *can*.
 - `web/app.py` — a FastAPI app exposing the same `analytics_store` queries
   as JSON over HTTP, and serving `static/` (the dashboard). A second,
   read-only entry point onto `data/enablement.db` — it never writes.
@@ -53,8 +63,8 @@ reasoning behind key choices.
   workflows. See "Subagents" below.
 - `data/enablement.db` — SQLite database: `skill_usage` (now with `chars`/
   `tokens_est` columns), `projects`, `sessions`, `worklog`, `decisions`,
-  `library_snapshots`, `repo_tech_scans` (created automatically on first run
-  of the MCP server). Not checked into git.
+  `library_snapshots`, `repo_tech_scans`, `watched_projects` (created
+  automatically on first run of the MCP server). Not checked into git.
 - `docs/` — the build plans and the decision log.
 
 ## Setup
@@ -108,13 +118,18 @@ All under `/api/`, all `GET`, all read-only, all reusing `analytics_store.py`:
 | `/api/skill-engagement` | Every skill in the library with its fetched/referenced-only/neither status (dashboard-only, no MCP tool -- same precedent as `/api/skills`) |
 | `/api/tech-stack` | Programming languages/technologies (Python, SQL, C#, C++, ...) detected in worklog text, with a per-entry mention count (dashboard-only) |
 | `/api/repo-tech-stack` | Programming languages/technologies found by scanning actual git repository history (see `scan_project_tech_stack`), with a file count per language, summed across every project scanned (dashboard-only) |
+| `/api/soft-skills` | Non-technical/professional skills (communication, leadership, mentoring, ...) detected in worklog text, with a per-entry mention count (dashboard-only) |
+| `/api/skill-insights` | Combined view: technologies ranked by a worklog-mentions + git-history combined score, every engaged skill (technical and non-technical) with its distinct-project count, and a suggested-next list of untouched library skills (dashboard-only) |
 
 ### Dashboard sections
 
 A prominent **token savings** card (headline percentage + a weekly/monthly/
-all-time comparison chart) right at the top → recap stat cards (with the
-weekly/monthly toggle) → activity charts (time per project, skill fetch
-counts, languages/tech mentioned in worklog text, and languages/tech found by
+all-time comparison chart) right at the top → **skill insights** (the
+combined, synthesized view -- most-used technologies across both signals,
+top technical and non-technical skills each with a distinct-project count,
+and a suggested-next list) → recap stat cards (with the weekly/monthly
+toggle) → activity charts (time per project, skill fetch counts,
+languages/tech mentioned in worklog text, and languages/tech found by
 scanning actual git history) → **all skills**
 (every skill in the library as a chip, showing fetched/referenced-only/
 neither for the whole library, not just one path) → learning-path progress
@@ -152,6 +167,13 @@ Both calls record a row in `skill_usage` (`listed` or `fetched`).
   reachable from wherever this MCP server is actually running — which is the
   point: run it against whatever project you're standing in front of, even
   one whose worklog entries never happen to spell out a language by name.
+  Also registers the project in `watched_projects` for `scan_all_projects`.
+- **`scan_all_projects()`** — rescans every project previously scanned via
+  `scan_project_tech_stack`, without naming each repo_path again. The actual
+  "watch my projects" capability: scan each real project once by hand, then
+  call this single tool going forward to refresh all of them together. A
+  project whose repo_path no longer exists is reported with an `error`
+  field rather than aborting the whole batch.
 
 ### Tech stack: two independent signals, not one
 
@@ -164,6 +186,42 @@ worklog says "built the dashboard" without ever spelling out "Python" or
 "JavaScript" still has a precise, structural answer sitting in its own git
 history — this tool reads that trail directly instead of depending on how a
 summary happened to be worded. See `docs/decision-log.md`.
+
+### Skill Insights: one combined answer, not four separate charts
+
+Before this, "what have I actually learned/used" required mentally combining
+four separate signals yourself: skill fetch counts, skill engagement
+(fetched vs. referenced), worklog-text tech mentions, and git-history tech
+scans. `analytics_store.skill_insights()` (`GET /api/skill-insights`, the
+dashboard's **Skill Insights** section) merges all of them into one view:
+
+- **`technologies`** — every language from `tech_stack_usage` and
+  `repo_tech_stack_usage`, summed into one `combined_score` per name. Two
+  complementary usage proxies added together, not picked between.
+- **`skills`** — every engaged library skill (fetched or referenced) plus
+  every detected soft skill (see `soft_skills.py`), each with a
+  `distinct_project_count`: how many different projects' worklog entries
+  evidence it. A skill used across three projects is more foundational/
+  transferable than one used ten times in a single project, even though a
+  raw mention count alone wouldn't show that.
+- **`suggested_next`** — library skills neither fetched nor referenced
+  anywhere yet: the literal, unweighted answer to "what haven't I touched."
+
+Every number here is a plain count, sum, or set-size of an existing signal
+— no hidden weighting beyond what's documented above, so the ranking stays
+auditable by hand, consistent with this project's whole dependency-light
+philosophy (no LLM call decides what's "important").
+
+### Non-technical skills: soft_skills.py
+
+`soft_skills.py` is the non-technical counterpart to `tech_stack.py`: the
+same deterministic keyword-matching approach (not an LLM), against a fixed
+vocabulary of general professional skills instead of programming
+languages — communication, stakeholder management, leadership, mentoring,
+negotiation, prioritization, conflict resolution, time management. Same
+precision safeguard as `skills_store.classify_skills_in_text`: requires at
+least 2 distinct keyword phrases per skill, not 1, so a single coincidental
+word doesn't trigger a false match.
 
 ### How time is derived
 
