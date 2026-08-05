@@ -1,5 +1,5 @@
 #!/bin/bash
-# Cosmetic-only SessionStart hook: welcomes the user as "Mimo" (this
+# Cosmetic-only SessionStart hook: welcomes the user as "MiMo" (this
 # project's persona name, see CLAUDE.md) at the start of a new session.
 #
 # The slogan is fixed -- it's the agent's identity line, so it stays the
@@ -31,7 +31,7 @@ python3 - <<'PYEOF'
 import json
 import random
 
-NAME = "M i m o"
+NAME = "M i M o"
 SLOGAN = "knows your work — and when to stop"
 
 # Only the symbols rotate; the name and slogan never change.
@@ -53,7 +53,7 @@ banner = f"{sym}  {NAME}  {sym}\n   {SLOGAN}"
 
 instruction = (
     "This is the start of a brand-new Claude Code session in a project "
-    "where you go by the name Mimo (see CLAUDE.md). Before addressing "
+    "where you go by the name MiMo (see CLAUDE.md). Before addressing "
     "anything else in the user's first message this session, open your "
     "reply with exactly this welcome banner in its own fenced code block "
     "(so it renders unmodified, one line per line), then respond to the "
